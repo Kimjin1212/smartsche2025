@@ -6,12 +6,13 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, useColorScheme, Text, View } from 'react-native';
-import { ScheduleScreen } from './src/screens/ScheduleScreen';
+import { View, Text, StyleSheet } from 'react-native';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { AppNavigator } from './src/navigation/AppNavigator';
+import 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+const App = () => {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
 
@@ -46,15 +47,11 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={styles.container.backgroundColor}
-      />
-      <ScheduleScreen />
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <AppNavigator />
+    </SafeAreaProvider>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
