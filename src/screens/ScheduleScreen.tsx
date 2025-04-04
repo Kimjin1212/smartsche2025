@@ -22,16 +22,20 @@ type ScheduleScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Sch
 
 interface Task {
   id: string;
-  content: string;
-  dateTime: FirebaseFirestoreTypes.Timestamp;
+  title: string;
+  startTime: FirebaseFirestoreTypes.Timestamp;
+  endTime: FirebaseFirestoreTypes.Timestamp;
   status: 'pending' | 'completed';
   userId: string;
   location?: string;
-  notes?: string;
-  tags?: string[];
+  weekday: number;
+  color: string;
+  createdAt?: FirebaseFirestoreTypes.Timestamp;
 }
 
 type Language = 'en' | 'zh' | 'ja' | 'ko';
+
+type FilterType = 'all' | 'pending' | 'completed' | 'today';
 
 // 多语言支持
 const translations = {
@@ -49,6 +53,25 @@ const translations = {
     complete: 'Complete',
     incomplete: 'Todo',
     edit: 'Edit',
+    addNewTask: 'Add New Task',
+    taskContent: 'Task Content',
+    taskDateTime: 'Date & Time',
+    save: 'Save',
+    cancel: 'Cancel',
+    taskTitle: 'Title',
+    taskLocation: 'Location',
+    weekday: 'Weekday',
+    startTime: 'Start Time',
+    endTime: 'End Time',
+    color: 'Color',
+    monday: 'Monday',
+    tuesday: 'Tuesday',
+    wednesday: 'Wednesday',
+    thursday: 'Thursday',
+    friday: 'Friday',
+    saturday: 'Saturday',
+    sunday: 'Sunday',
+    delete: 'Delete',
   },
   zh: {
     welcome: '欢迎, ',
@@ -64,6 +87,25 @@ const translations = {
     complete: '完成',
     incomplete: '待办',
     edit: '编辑',
+    addNewTask: '添加新任务',
+    taskContent: '任务内容',
+    taskDateTime: '日期时间',
+    save: '保存',
+    cancel: '取消',
+    taskTitle: '标题',
+    taskLocation: '地点',
+    weekday: '星期',
+    startTime: '开始时间',
+    endTime: '结束时间',
+    color: 'Color',
+    monday: '周一',
+    tuesday: '周二',
+    wednesday: '周三',
+    thursday: '周四',
+    friday: '周五',
+    saturday: '周六',
+    sunday: '周日',
+    delete: '删除',
   },
   ja: {
     welcome: 'ようこそ、',
@@ -79,6 +121,25 @@ const translations = {
     complete: '完了',
     incomplete: '未完了',
     edit: '編集',
+    addNewTask: '新規タスク',
+    taskContent: 'タスク内容',
+    taskDateTime: '日時',
+    save: '保存',
+    cancel: 'キャンセル',
+    taskTitle: 'タイトル',
+    taskLocation: '場所',
+    weekday: '曜日',
+    startTime: '開始時間',
+    endTime: '終了時間',
+    color: 'カラー',
+    monday: '月曜日',
+    tuesday: '火曜日',
+    wednesday: '水曜日',
+    thursday: '木曜日',
+    friday: '金曜日',
+    saturday: '土曜日',
+    sunday: '日曜日',
+    delete: '削除',
   },
   ko: {
     welcome: '환영합니다, ',
@@ -94,7 +155,67 @@ const translations = {
     complete: '완료',
     incomplete: '진행중',
     edit: '편집',
+    addNewTask: '새 할일',
+    taskContent: '할일 내용',
+    taskDateTime: '날짜 및 시간',
+    save: '저장',
+    cancel: '취소',
+    taskTitle: '제목',
+    taskLocation: '위치',
+    weekday: '요일',
+    startTime: '시작 시간',
+    endTime: '종료 시간',
+    color: '색상',
+    monday: '월요일',
+    tuesday: '화요일',
+    wednesday: '수요일',
+    thursday: '목요일',
+    friday: '금요일',
+    saturday: '토요일',
+    sunday: '일요일',
+    delete: '삭제',
   },
+};
+
+const getFilterLabel = (filter: FilterType, t: any) => {
+  switch (filter) {
+    case 'all':
+      return t.allTasks;
+    case 'pending':
+      return t.pendingTasks;
+    case 'completed':
+      return t.completedTasks;
+    case 'today':
+      return t.todayTasks;
+    default:
+      return '';
+  }
+};
+
+// 添加星期数组
+const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const colors = ['#4CAF50', '#2196F3', '#FFC107', '#FF5722', '#9C27B0', '#795548'];
+
+// 添加语言显示映射
+const languageDisplayNames = {
+  en: 'English',
+  zh: '中文',
+  ja: '日本語',
+  ko: '한국어',
+};
+
+// 更新星期数组为多语言支持
+const getWeekdays = (language: Language) => {
+  const t = translations[language];
+  return [
+    t.monday,
+    t.tuesday,
+    t.wednesday,
+    t.thursday,
+    t.friday,
+    t.saturday,
+    t.sunday,
+  ];
 };
 
 export const ScheduleScreen = () => {
@@ -104,9 +225,17 @@ export const ScheduleScreen = () => {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchText, setSearchText] = useState('');
-  const [currentFilter, setCurrentFilter] = useState('all');
+  const [currentFilter, setCurrentFilter] = useState<FilterType>('all');
   const [language, setLanguage] = useState<Language>('zh');
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [newTaskContent, setNewTaskContent] = useState('');
+  const [newTaskDateTime, setNewTaskDateTime] = useState(new Date());
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskLocation, setNewTaskLocation] = useState('');
+  const [selectedWeekday, setSelectedWeekday] = useState(0); // 默认选中周一
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('09:00');
+  const [selectedColor, setSelectedColor] = useState(colors[0]);
 
   const t = translations[language];
 
@@ -139,9 +268,15 @@ export const ScheduleScreen = () => {
 
   // 处理任务过滤
   const filteredTasks = tasks.filter(task => {
-    const matchesSearch = task.content.toLowerCase().includes(searchText.toLowerCase());
+    const searchLower = searchText.toLowerCase();
+    const matchesSearch = 
+      task.title?.toLowerCase().includes(searchLower) || 
+      task.location?.toLowerCase().includes(searchLower) ||
+      getWeekdays(language)[task.weekday]?.toLowerCase().includes(searchLower) ||
+      false;
+    
     const today = new Date();
-    const taskDate = task.dateTime?.toDate();
+    const taskStartTime = task.startTime?.toDate();
     
     switch (currentFilter) {
       case 'pending':
@@ -149,10 +284,10 @@ export const ScheduleScreen = () => {
       case 'completed':
         return matchesSearch && task.status === 'completed';
       case 'today':
-        return matchesSearch && taskDate &&
-          taskDate.getDate() === today.getDate() &&
-          taskDate.getMonth() === today.getMonth() &&
-          taskDate.getFullYear() === today.getFullYear();
+        return matchesSearch && taskStartTime &&
+          taskStartTime.getDate() === today.getDate() &&
+          taskStartTime.getMonth() === today.getMonth() &&
+          taskStartTime.getFullYear() === today.getFullYear();
       default:
         return matchesSearch;
     }
@@ -183,6 +318,59 @@ export const ScheduleScreen = () => {
     setIsEditModalVisible(true);
   };
 
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await firestore()
+        .collection('tasks')
+        .doc(taskId)
+        .delete();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
+  };
+
+  // 修改添加任务的函数
+  const handleAddTask = async () => {
+    try {
+      const userId = auth().currentUser?.uid;
+      if (!userId || !newTaskTitle.trim()) return;
+
+      // 创建任务日期时间
+      const now = new Date();
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
+      
+      const taskDate = new Date(now);
+      taskDate.setHours(startHour, startMinute, 0);
+
+      const taskEndDate = new Date(now);
+      taskEndDate.setHours(endHour, endMinute, 0);
+
+      await firestore().collection('tasks').add({
+        title: newTaskTitle.trim(),
+        location: newTaskLocation.trim(),
+        weekday: selectedWeekday,
+        startTime: firestore.Timestamp.fromDate(taskDate),
+        endTime: firestore.Timestamp.fromDate(taskEndDate),
+        color: selectedColor,
+        status: 'pending',
+        userId: userId,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+
+      setNewTaskTitle('');
+      setNewTaskLocation('');
+      setSelectedWeekday(0);
+      setStartTime('08:00');
+      setEndTime('09:00');
+      setSelectedColor(colors[0]);
+      setIsAddModalVisible(false);
+    } catch (error) {
+      console.error('Error adding task:', error);
+      Alert.alert('Error', 'Failed to add task. Please try again.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#f8f9fa" barStyle="dark-content" />
@@ -190,239 +378,453 @@ export const ScheduleScreen = () => {
       {/* 应用标题栏 */}
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.appTitle}>SmartSche</Text>
+          <Text style={styles.appTitle}>Smart Schedule</Text>
           {currentUser && (
-            <Text style={styles.welcomeText}>
-              {t.welcome}{userDisplayName}
-            </Text>
+            <TextInput
+              style={styles.welcomeInput}
+              placeholder={t.welcome}
+              defaultValue={userDisplayName}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="none"
+              autoComplete="off"
+              onChangeText={async (newName) => {
+                try {
+                  await auth().currentUser?.updateProfile({
+                    displayName: newName
+                  });
+                } catch (error) {
+                  console.error('Error updating display name:', error);
+                }
+              }}
+            />
           )}
         </View>
-        
-        {currentUser && (
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <Text style={styles.signOutButtonText}>{t.signOut}</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.languageButton}
+            onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+          >
+            <Text style={styles.languageButtonText}>{languageDisplayNames[language]}</Text>
           </TouchableOpacity>
-        )}
+
+          {currentUser && (
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <Text style={styles.signOutButtonText}>{t.signOut}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* 顶部操作按钮区域 */}
       <View style={styles.topActionContainer}>
         <TouchableOpacity 
-          style={styles.topActionButton}
+          style={[styles.topActionButton, styles.primaryButton]}
           onPress={() => navigation.navigate('WeeklySchedule', { language })}
         >
-          <Text style={styles.topActionButtonText}>{t.weeklySchedule}</Text>
+          <Text style={styles.primaryButtonText}>{t.weeklySchedule}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={styles.topActionButton}
+          style={[styles.topActionButton, styles.primaryButton]}
           onPress={() => setIsAddModalVisible(true)}
         >
-          <Text style={styles.topActionButtonText}>{t.addTask}</Text>
+          <Text style={styles.primaryButtonText}>{t.addTask}</Text>
         </TouchableOpacity>
       </View>
-      
-      {/* 搜索栏和语言选择 */}
-      <View style={styles.searchRow}>
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={t.searchPlaceholder}
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-          {searchText.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchText('')}>
-              <Text style={styles.clearSearchText}>×</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.languageButton} 
-          onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+
+      {/* 搜索栏 */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder={t.searchPlaceholder}
+          value={searchText}
+          onChangeText={setSearchText}
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="none"
+          autoComplete="off"
+        />
+      </View>
+
+      {/* 过滤器 */}
+      <View style={styles.filterWrapper}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContentContainer}
         >
-          <Text style={styles.languageButtonText}>{language.toUpperCase()}</Text>
-        </TouchableOpacity>
+          {(['all', 'pending', 'completed', 'today'] as FilterType[]).map((filter) => (
+            <TouchableOpacity
+              key={filter}
+              style={[
+                styles.filterButton,
+                currentFilter === filter && styles.filterButtonActive,
+              ]}
+              onPress={() => setCurrentFilter(filter)}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  currentFilter === filter && styles.filterButtonTextActive,
+                ]}
+              >
+                {getFilterLabel(filter, t)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
-      
+
+      {/* 任务列表 */}
+      <View style={styles.taskListContainer}>
+        <ScrollView 
+          style={styles.taskList}
+          contentContainerStyle={styles.taskListContent}
+        >
+          {filteredTasks.length === 0 ? (
+            <Text style={styles.noTasksText}>{t.noTasks}</Text>
+          ) : (
+            filteredTasks.map((task) => (
+              <View
+                key={task.id}
+                style={[
+                  styles.taskItem,
+                  task.status === 'completed' && styles.taskItemCompleted,
+                ]}
+              >
+                <View style={styles.taskMainContent}>
+                  <TouchableOpacity
+                    style={styles.taskStatusButton}
+                    onPress={() => handleToggleComplete(task)}
+                  >
+                    <View style={[
+                      styles.taskStatusIndicator,
+                      task.status === 'completed' && styles.taskStatusIndicatorCompleted
+                    ]}>
+                      {task.status === 'completed' && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                  </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.taskContent,
+                      task.status === 'completed' && styles.taskContentCompleted,
+                    ]}
+                  >
+                    {task.title}
+                  </Text>
+                  <Text style={styles.taskDateTime}>
+                    {format(task.startTime.toDate(), 'yyyy-MM-dd HH:mm')}
+                  </Text>
+                </View>
+                <View style={styles.taskActions}>
+                  <TouchableOpacity
+                    style={[styles.taskActionButton, styles.editButton]}
+                    onPress={() => handleEditTask(task)}
+                  >
+                    <Text style={styles.taskActionButtonText}>{t.edit}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.taskActionButton, styles.deleteButton]}
+                    onPress={() => handleDeleteTask(task.id)}
+                  >
+                    <Text style={[styles.taskActionButtonText, styles.deleteButtonText]}>{t.delete}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </View>
+
+      {/* 语言选择菜单 */}
       {showLanguageMenu && (
         <View style={styles.languageMenu}>
-          {['en', 'zh', 'ja', 'ko'].map((lang) => (
+          {Object.entries(languageDisplayNames).map(([lang, name]) => (
             <TouchableOpacity
               key={lang}
               style={[
-                styles.languageOption,
-                language === lang && styles.activeLanguageOption,
+                styles.languageMenuItem,
+                language === lang && styles.languageMenuItemActive
               ]}
               onPress={() => {
                 setLanguage(lang as Language);
                 setShowLanguageMenu(false);
               }}
             >
-              <Text
-                style={[
-                  styles.languageOptionText,
-                  language === lang && styles.activeLanguageOptionText,
-                ]}
-              >
-                {lang.toUpperCase()}
+              <Text style={[
+                styles.languageMenuItemText,
+                language === lang && styles.languageMenuItemTextActive
+              ]}>
+                {name}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
-      {/* 任务过滤标签 */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterTagsContainer}>
-        <TouchableOpacity
-          style={[
-            styles.filterTag,
-            currentFilter === 'all' && styles.activeFilterTag,
-          ]}
-          onPress={() => setCurrentFilter('all')}
-        >
-          <Text style={[
-            styles.filterTagText,
-            currentFilter === 'all' && styles.activeFilterTagText
-          ]}>
-            {t.allTasks}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.filterTag,
-            currentFilter === 'pending' && styles.activeFilterTag,
-          ]}
-          onPress={() => setCurrentFilter('pending')}
-        >
-          <Text style={[
-            styles.filterTagText,
-            currentFilter === 'pending' && styles.activeFilterTagText
-          ]}>
-            {t.pendingTasks}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.filterTag,
-            currentFilter === 'completed' && styles.activeFilterTag,
-          ]}
-          onPress={() => setCurrentFilter('completed')}
-        >
-          <Text style={[
-            styles.filterTagText,
-            currentFilter === 'completed' && styles.activeFilterTagText
-          ]}>
-            {t.completedTasks}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.filterTag,
-            currentFilter === 'today' && styles.activeFilterTag,
-          ]}
-          onPress={() => setCurrentFilter('today')}
-        >
-          <Text style={[
-            styles.filterTagText,
-            currentFilter === 'today' && styles.activeFilterTagText
-          ]}>
-            {t.todayTasks}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
+      {/* 添加任务模态窗口 */}
+      <Modal
+        visible={isAddModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsAddModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{t.addNewTask}</Text>
+            
+            <TextInput
+              style={styles.modalInputField}
+              placeholder={t.taskTitle}
+              value={newTaskTitle}
+              onChangeText={setNewTaskTitle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="none"
+              autoComplete="off"
+            />
 
-      {/* 任务列表 */}
-      <ScrollView style={styles.tasksList} contentContainerStyle={styles.tasksListContent}>
-        {filteredTasks.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>{t.noTasks}</Text>
-          </View>
-        ) : (
-          filteredTasks.map((task) => (
-            <View 
-              key={task.id} 
-              style={[
-                styles.taskItem,
-                task.status === 'completed' && styles.completedTaskItem,
-              ]}
+            <TextInput
+              style={styles.modalInputField}
+              placeholder={t.taskLocation}
+              value={newTaskLocation}
+              onChangeText={setNewTaskLocation}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="none"
+              autoComplete="off"
+            />
+
+            <Text style={styles.modalLabel}>{t.weekday}</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.weekdayContainer}
+              contentContainerStyle={styles.weekdayContentContainer}
             >
-              <View style={styles.taskContent}>
-                <View style={styles.taskHeader}>
-                  <Text 
-                    style={[
-                      styles.taskTitle,
-                      task.status === 'completed' && styles.completedTaskTitle,
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {task.content}
-                  </Text>
-                </View>
-                
-                <View style={styles.taskDetails}>
-                  {task.dateTime && (
-                    <View style={styles.taskDetail}>
-                      <Text style={styles.taskDetailText}>
-                        {format(task.dateTime.toDate(), 'yyyy-MM-dd HH:mm')}
-                      </Text>
-                    </View>
-                  )}
-                  
-                  {task.location && (
-                    <View style={styles.taskDetail}>
-                      <Text style={styles.taskDetailText}>{task.location}</Text>
-                    </View>
-                  )}
-
-                  {task.notes && (
-                    <View style={styles.taskDetail}>
-                      <Text style={styles.taskDetailText} numberOfLines={2}>{task.notes}</Text>
-                    </View>
-                  )}
-                </View>
-                
-                {/* 任务标签 */}
-                {task.tags && task.tags.length > 0 && (
-                  <View style={styles.tagList}>
-                    {task.tags.map((tag, index) => (
-                      <View key={index} style={styles.tag}>
-                        <Text style={styles.tagText}>{tag}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-              
-              {/* 任务操作按钮 */}
-              <View style={styles.taskActions}>
+              {getWeekdays(language).map((day, index) => (
                 <TouchableOpacity
-                  style={styles.taskActionButton}
-                  onPress={() => handleToggleComplete(task)}
+                  key={index}
+                  style={[
+                    styles.weekdayButton,
+                    selectedWeekday === index && styles.weekdayButtonSelected
+                  ]}
+                  onPress={() => setSelectedWeekday(index)}
                 >
                   <Text style={[
-                    styles.taskActionButtonText,
-                    task.status === 'completed' && styles.completedTaskActionText
+                    styles.weekdayButtonText,
+                    selectedWeekday === index && styles.weekdayButtonTextSelected
                   ]}>
-                    {task.status === 'completed' ? t.complete : t.incomplete}
+                    {day}
                   </Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={styles.taskActionButton}
-                  onPress={() => handleEditTask(task)}
-                >
-                  <Text style={styles.taskActionButtonText}>{t.edit}</Text>
-                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.timeContainer}>
+              <View style={styles.timeField}>
+                <Text style={styles.modalLabel}>{t.startTime}</Text>
+                <TextInput
+                  style={styles.timeInput}
+                  value={startTime}
+                  onChangeText={setStartTime}
+                  placeholder="08:00"
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={styles.timeField}>
+                <Text style={styles.modalLabel}>{t.endTime}</Text>
+                <TextInput
+                  style={styles.timeInput}
+                  value={endTime}
+                  onChangeText={setEndTime}
+                  placeholder="09:00"
+                  keyboardType="numbers-and-punctuation"
+                />
               </View>
             </View>
-          ))
-        )}
-      </ScrollView>
+
+            <Text style={styles.modalLabel}>{t.color}</Text>
+            <View style={styles.colorContainer}>
+              {colors.map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  style={[
+                    styles.colorButton,
+                    { backgroundColor: color },
+                    selectedColor === color && styles.colorButtonSelected
+                  ]}
+                  onPress={() => setSelectedColor(color)}
+                />
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setIsAddModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleAddTask}
+              >
+                <Text style={styles.saveButtonText}>{t.save}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 编辑任务模态窗口 */}
+      <Modal
+        visible={isEditModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>{t.edit}</Text>
+            
+            <TextInput
+              style={styles.modalInputField}
+              placeholder={t.taskTitle}
+              value={editingTask?.title || ''}
+              onChangeText={(text) => setEditingTask(prev => prev ? {...prev, title: text} : null)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="none"
+              autoComplete="off"
+            />
+
+            <TextInput
+              style={styles.modalInputField}
+              placeholder={t.taskLocation}
+              value={editingTask?.location || ''}
+              onChangeText={(text) => setEditingTask(prev => prev ? {...prev, location: text} : null)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="none"
+              autoComplete="off"
+            />
+
+            <Text style={styles.modalLabel}>{t.weekday}</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.weekdayContainer}
+              contentContainerStyle={styles.weekdayContentContainer}
+            >
+              {getWeekdays(language).map((day, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.weekdayButton,
+                    editingTask?.weekday === index && styles.weekdayButtonSelected
+                  ]}
+                  onPress={() => setEditingTask(prev => prev ? {...prev, weekday: index} : null)}
+                >
+                  <Text style={[
+                    styles.weekdayButtonText,
+                    editingTask?.weekday === index && styles.weekdayButtonTextSelected
+                  ]}>
+                    {day}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <View style={styles.timeContainer}>
+              <View style={styles.timeField}>
+                <Text style={styles.modalLabel}>{t.startTime}</Text>
+                <TextInput
+                  style={styles.timeInput}
+                  value={editingTask ? format(editingTask.startTime.toDate(), 'HH:mm') : ''}
+                  onChangeText={(text) => {
+                    if (editingTask) {
+                      const [hours, minutes] = text.split(':').map(Number);
+                      const date = editingTask.startTime.toDate();
+                      date.setHours(hours || 0, minutes || 0);
+                      setEditingTask({...editingTask, startTime: firestore.Timestamp.fromDate(date)});
+                    }
+                  }}
+                  placeholder="08:00"
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={styles.timeField}>
+                <Text style={styles.modalLabel}>{t.endTime}</Text>
+                <TextInput
+                  style={styles.timeInput}
+                  value={editingTask ? format(editingTask.endTime.toDate(), 'HH:mm') : ''}
+                  onChangeText={(text) => {
+                    if (editingTask) {
+                      const [hours, minutes] = text.split(':').map(Number);
+                      const date = editingTask.endTime.toDate();
+                      date.setHours(hours || 0, minutes || 0);
+                      setEditingTask({...editingTask, endTime: firestore.Timestamp.fromDate(date)});
+                    }
+                  }}
+                  placeholder="09:00"
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.modalLabel}>{t.color}</Text>
+            <View style={styles.colorContainer}>
+              {colors.map((color) => (
+                <TouchableOpacity
+                  key={color}
+                  style={[
+                    styles.colorButton,
+                    { backgroundColor: color },
+                    editingTask?.color === color && styles.colorButtonSelected
+                  ]}
+                  onPress={() => setEditingTask(prev => prev ? {...prev, color} : null)}
+                />
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setIsEditModalVisible(false);
+                  setEditingTask(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={async () => {
+                  if (editingTask) {
+                    try {
+                      await firestore()
+                        .collection('tasks')
+                        .doc(editingTask.id)
+                        .update(editingTask);
+                      setIsEditModalVisible(false);
+                      setEditingTask(null);
+                    } catch (error) {
+                      console.error('Error updating task:', error);
+                      Alert.alert('Error', 'Failed to update task. Please try again.');
+                    }
+                  }
+                }}
+              >
+                <Text style={styles.saveButtonText}>{t.save}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -436,8 +838,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
@@ -446,223 +848,380 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   appTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '600',
     color: '#2196F3',
+    letterSpacing: 0.5,
   },
-  welcomeText: {
+  welcomeInput: {
     fontSize: 14,
     color: '#666',
     marginTop: 4,
+    padding: 0,
+    height: 20,
   },
-  signOutButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-    backgroundColor: '#f8f9fa',
-  },
-  signOutButtonText: {
-    color: '#FF5722',
-    fontSize: 14,
-  },
-  topActionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  topActionButton: {
+  headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    elevation: 2,
-  },
-  topActionButtonText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#333',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    height: 40,
-    fontSize: 15,
-    color: '#333',
-  },
-  clearSearchText: {
-    fontSize: 20,
-    color: '#999',
-    paddingHorizontal: 8,
+    gap: 12,
   },
   languageButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
+    backgroundColor: '#f5f5f5',
     borderRadius: 4,
-    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   languageButtonText: {
     fontSize: 14,
-    color: '#666',
-  },
-  languageMenu: {
-    position: 'absolute',
-    top: 120,
-    right: 16,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 4,
-    elevation: 4,
-    zIndex: 1000,
-  },
-  languageOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  activeLanguageOption: {
-    backgroundColor: '#f0f0f0',
-  },
-  languageOptionText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  activeLanguageOptionText: {
-    color: '#2196F3',
+    color: '#333',
     fontWeight: '500',
   },
-  filterTagsContainer: {
+  signOutButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 4,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  signOutButtonText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  topActionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    gap: 12,
+  },
+  topActionButton: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 1,
+  },
+  primaryButton: {
+    backgroundColor: '#2196F3',
+    borderWidth: 1,
+    borderColor: '#1E88E5',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  searchContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+  },
+  searchInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  filterWrapper: {
     backgroundColor: '#fff',
     paddingVertical: 8,
-    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  filterTag: {
+  filterContentContainer: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginHorizontal: 4,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 16,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  activeFilterTag: {
+  filterButtonActive: {
     backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
   },
-  filterTagText: {
+  filterButtonText: {
     color: '#666',
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: '500',
   },
-  activeFilterTagText: {
+  filterButtonTextActive: {
     color: '#fff',
   },
-  tasksList: {
+  taskListContainer: {
     flex: 1,
     backgroundColor: '#fff',
   },
-  tasksListContent: {
-    padding: 12,
+  taskList: {
+    flex: 1,
+  },
+  taskListContent: {
+    flexGrow: 1,
+    paddingBottom: 16,
   },
   taskItem: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  completedTaskItem: {
     backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  taskContent: {
-    flex: 1,
-    marginRight: 8,
+  taskItemCompleted: {
+    opacity: 0.7,
   },
-  taskHeader: {
+  taskMainContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
-  taskTitle: {
+  taskContent: {
     fontSize: 16,
     color: '#333',
     flex: 1,
+    textAlign: 'left',
   },
-  completedTaskTitle: {
-    color: '#999',
+  taskContentCompleted: {
     textDecorationLine: 'line-through',
-  },
-  taskDetails: {
-    marginTop: 6,
-  },
-  taskDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  taskDetailText: {
-    fontSize: 13,
     color: '#666',
   },
-  tagList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
+  taskDateTime: {
+    fontSize: 14,
+    color: '#999',
+    marginLeft: 12,
   },
-  tag: {
-    backgroundColor: '#f0f0f0',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 6,
-    marginBottom: 4,
+  taskLocation: {
+    display: 'none',
   },
-  tagText: {
-    fontSize: 12,
-    color: '#666',
+  taskTags: {
+    display: 'none',
   },
   taskActions: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
   },
   taskActionButton: {
-    padding: 8,
-    marginLeft: 6,
-    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: 4,
+    borderWidth: 1,
+  },
+  editButton: {
+    borderColor: '#2196F3',
+  },
+  deleteButton: {
+    borderColor: '#ff6b6b',
   },
   taskActionButtonText: {
-    fontSize: 13,
+    fontSize: 14,
+    color: '#2196F3',
+  },
+  deleteButtonText: {
+    color: '#ff6b6b',
+  },
+  noTasksText: {
+    textAlign: 'center',
+    color: '#999',
+    padding: 16,
+    fontSize: 15,
+  },
+  languageMenu: {
+    position: 'absolute',
+    top: 64,
+    right: 16,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    zIndex: 2,
+  },
+  languageMenuItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  languageMenuItemActive: {
+    backgroundColor: '#f5f5f5',
+  },
+  languageMenuItemText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  languageMenuItemTextActive: {
+    color: '#2196F3',
+    fontWeight: '500',
+  },
+  taskTag: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginRight: 4,
+    marginTop: 2,
+  },
+  taskTagText: {
+    fontSize: 10,
     color: '#666',
   },
-  completedTaskActionText: {
-    color: '#4CAF50',
-  },
-  emptyState: {
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 32,
   },
-  emptyStateText: {
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
+  },
+  modalInputField: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 16,
     fontSize: 16,
-    color: '#999',
+  },
+  modalLabel: {
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 8,
+  },
+  weekdayContainer: {
+    marginBottom: 16,
+  },
+  weekdayContentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  weekdayButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  weekdayButtonSelected: {
+    backgroundColor: '#2196F3',
+  },
+  weekdayButtonText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  weekdayButtonTextSelected: {
+    color: '#fff',
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  timeField: {
+    flex: 1,
+    marginRight: 8,
+  },
+  timeInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 12,
+    fontSize: 16,
+  },
+  colorContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    gap: 12,
+  },
+  colorButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  colorButtonSelected: {
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 4,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f0f0f0',
+  },
+  saveButton: {
+    backgroundColor: '#4CAF50',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  taskStatusButton: {
+    marginRight: 12,
+  },
+  taskStatusIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  taskStatusIndicatorCompleted: {
+    backgroundColor: '#2196F3',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 
