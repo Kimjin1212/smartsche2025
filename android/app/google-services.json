@@ -1,0 +1,92 @@
+{
+  "project_info": {
+    "project_number": "85070388738",
+    "project_id": "smartscheduleapp",
+    "storage_bucket": "smartscheduleapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:85070388738:android:f6e67ffe8581469b5ed11b",
+        "android_client_info": {
+          "package_name": "com.myproject"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "85070388738-89bgk6k6l98g07tqmn2fqeao8n1b61o1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.myproject",
+            "certificate_hash": "3608add94861fda123f4e8101b35d216dac4538f"
+          }
+        },
+        {
+          "client_id": "85070388738-hr4qivu9qaasppgf4jmgi7761o2oc57i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.myproject",
+            "certificate_hash": "360badd94861fda123f4e81d1b35d216dac4538f"
+          }
+        },
+        {
+          "client_id": "85070388738-ffgq8d9v12kn2a3uds65q0n3ef9palts.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQBHWbHQcJgpNU0W5itqWvp1Zd80ZOKgc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "85070388738-ffgq8d9v12kn2a3uds65q0n3ef9palts.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:85070388738:android:b3e7854bb40ffc995ed11b",
+        "android_client_info": {
+          "package_name": "com.smartscheapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "85070388738-k6tuttjqp2delk1nb495jqlbd7831s7h.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.smartscheapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "85070388738-ffgq8d9v12kn2a3uds65q0n3ef9palts.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQBHWbHQcJgpNU0W5itqWvp1Zd80ZOKgc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "85070388738-ffgq8d9v12kn2a3uds65q0n3ef9palts.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
