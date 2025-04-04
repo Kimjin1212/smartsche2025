@@ -232,13 +232,13 @@ interface TaskItem {
   status?: 'pending' | 'completed';
 }
 
-interface WeeklyScheduleProps {
-  route: WeeklyScheduleRouteProp;
+export interface WeeklyScheduleProps {
+  language: string;
 }
 
-export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ route }) => {
+export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
   const navigation = useNavigation<WeeklyScheduleNavigationProp>();
-  const { language } = route.params;
+  const { language: routeLanguage } = useRoute<WeeklyScheduleRouteProp>().params;
   const [routines, setRoutines] = useState<RoutineItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -251,7 +251,7 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ route }) => {
   const [routineColor, setRoutineColor] = useState('#4CAF50');
   const [message, setMessage] = useState<string | null>(null);
 
-  const t = translations[language as Language] || translations.en;
+  const t = translations[routeLanguage as Language] || translations.en;
 
   // 获取日程和任务数据
   useEffect(() => {

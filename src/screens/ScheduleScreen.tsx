@@ -22,15 +22,13 @@ type ScheduleScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Sch
 
 interface Task {
   id: string;
-  title: string;
-  startTime: FirebaseFirestoreTypes.Timestamp;
-  endTime: FirebaseFirestoreTypes.Timestamp;
-  status: 'pending' | 'completed';
   userId: string;
+  content: string;
+  dateTime: FirebaseFirestoreTypes.Timestamp;
   location?: string;
+  status: 'pending' | 'completed';
   weekday: number;
   color: string;
-  createdAt?: FirebaseFirestoreTypes.Timestamp;
 }
 
 type Language = 'en' | 'zh' | 'ja' | 'ko';
@@ -72,6 +70,13 @@ const translations = {
     saturday: 'Saturday',
     sunday: 'Sunday',
     delete: 'Delete',
+    timeConflict: 'Time Conflict',
+    conflictWith: 'Conflicts with task',
+    continue: 'Continue Anyway',
+    sync: 'Sync',
+    syncing: 'Syncing...',
+    syncSuccess: 'Sync completed',
+    syncFailed: 'Sync failed',
   },
   zh: {
     welcome: '欢迎, ',
@@ -106,6 +111,13 @@ const translations = {
     saturday: '周六',
     sunday: '周日',
     delete: '删除',
+    timeConflict: '时间冲突',
+    conflictWith: '与以下任务时间冲突',
+    continue: '继续添加',
+    sync: '同步',
+    syncing: '同步中...',
+    syncSuccess: '同步完成',
+    syncFailed: '同步失败',
   },
   ja: {
     welcome: 'ようこそ、',
@@ -140,6 +152,13 @@ const translations = {
     saturday: '土曜日',
     sunday: '日曜日',
     delete: '削除',
+    timeConflict: '時間の重複',
+    conflictWith: '次のタスクと時間が重複しています',
+    continue: '続行',
+    sync: '同期',
+    syncing: '同期中...',
+    syncSuccess: '同期完了',
+    syncFailed: '同期失敗',
   },
   ko: {
     welcome: '환영합니다, ',
@@ -174,6 +193,13 @@ const translations = {
     saturday: '토요일',
     sunday: '일요일',
     delete: '삭제',
+    timeConflict: '시간 중복',
+    conflictWith: '다음 작업과 시간이 중복됩니다',
+    continue: '계속하기',
+    sync: '동기화',
+    syncing: '동기화 중...',
+    syncSuccess: '동기화 완료',
+    syncFailed: '동기화 실패',
   },
 };
 
@@ -218,6 +244,44 @@ const getWeekdays = (language: Language) => {
   ];
 };
 
+// 添加时间冲突检查函数
+const checkTimeConflict = (
+  weekday: number,
+  startTime: string,
+  endTime: string,
+  existingTasks: Task[],
+  excludeTaskId?: string
+) => {
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const [endHour, endMinute] = endTime.split(':').map(Number);
+  const newStartMinutes = startHour * 60 + startMinute;
+  const newEndMinutes = endHour * 60 + endMinute;
+
+  const conflictingTask = existingTasks.find(task => {
+    if (excludeTaskId && task.id === excludeTaskId) return false;
+    if (task.weekday !== weekday) return false;
+
+    const taskStartTime = task.dateTime.toDate();
+    const taskEndTime = task.dateTime.toDate();
+    const taskStartMinutes = taskStartTime.getHours() * 60 + taskStartTime.getMinutes();
+    const taskEndMinutes = taskEndTime.getHours() * 60 + taskEndTime.getMinutes();
+
+    return (
+      (newStartMinutes >= taskStartMinutes && newStartMinutes < taskEndMinutes) ||
+      (newEndMinutes > taskStartMinutes && newEndMinutes <= taskEndMinutes) ||
+      (newStartMinutes <= taskStartMinutes && newEndMinutes >= taskEndMinutes)
+    );
+  });
+
+  return conflictingTask;
+};
+
+const formatTaskTime = (task: Task) => {
+  if (!task.dateTime) return '';
+  const date = task.dateTime.toDate();
+  return format(date, 'yyyy-MM-dd HH:mm');
+};
+
 export const ScheduleScreen = () => {
   const navigation = useNavigation<ScheduleScreenNavigationProp>();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -236,6 +300,7 @@ export const ScheduleScreen = () => {
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('09:00');
   const [selectedColor, setSelectedColor] = useState(colors[0]);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const t = translations[language];
 
@@ -247,36 +312,38 @@ export const ScheduleScreen = () => {
     const userId = auth().currentUser?.uid;
     if (!userId) return;
 
-    const unsubscribe = firestore()
-      .collection('tasks')
-      .where('userId', '==', userId)
-      .onSnapshot(
-        (snapshot) => {
-          const tasksData = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          })) as Task[];
-          setTasks(tasksData);
-        },
-        (error) => {
-          console.error('Error fetching tasks:', error);
-        }
-      );
+    // 不再使用实时监听，改为普通获取
+    const fetchTasks = async () => {
+      try {
+        const snapshot = await firestore()
+          .collection('tasks')
+          .where('userId', '==', userId)
+          .get();
+        
+        const tasksData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Task[];
+        setTasks(tasksData);
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchTasks();
   }, []);
 
   // 处理任务过滤
   const filteredTasks = tasks.filter(task => {
     const searchLower = searchText.toLowerCase();
     const matchesSearch = 
-      task.title?.toLowerCase().includes(searchLower) || 
+      task.content?.toLowerCase().includes(searchLower) || 
       task.location?.toLowerCase().includes(searchLower) ||
       getWeekdays(language)[task.weekday]?.toLowerCase().includes(searchLower) ||
       false;
     
     const today = new Date();
-    const taskStartTime = task.startTime?.toDate();
+    const taskStartTime = task.dateTime?.toDate();
     
     switch (currentFilter) {
       case 'pending':
@@ -313,7 +380,7 @@ export const ScheduleScreen = () => {
     }
   };
 
-  const handleEditTask = (task: Task) => {
+  const openEditModal = (task: Task) => {
     setEditingTask(task);
     setIsEditModalVisible(true);
   };
@@ -335,39 +402,152 @@ export const ScheduleScreen = () => {
       const userId = auth().currentUser?.uid;
       if (!userId || !newTaskTitle.trim()) return;
 
-      // 创建任务日期时间
-      const now = new Date();
-      const [startHour, startMinute] = startTime.split(':').map(Number);
-      const [endHour, endMinute] = endTime.split(':').map(Number);
-      
-      const taskDate = new Date(now);
-      taskDate.setHours(startHour, startMinute, 0);
+      // 检查时间冲突
+      const conflictingTask = checkTimeConflict(
+        selectedWeekday,
+        startTime,
+        endTime,
+        tasks
+      );
 
-      const taskEndDate = new Date(now);
-      taskEndDate.setHours(endHour, endMinute, 0);
+      if (conflictingTask) {
+        Alert.alert(
+          t.timeConflict || '时间冲突',
+          `${t.conflictWith || '与以下任务时间冲突'}: ${conflictingTask.content} (${format(conflictingTask.dateTime.toDate(), 'HH:mm')} - ${format(conflictingTask.dateTime.toDate(), 'HH:mm')})`,
+          [
+            {
+              text: t.cancel || '取消',
+              style: 'cancel'
+            },
+            {
+              text: t.continue || '继续添加',
+              onPress: async () => {
+                await addTaskToFirestore();
+              }
+            }
+          ]
+        );
+        return;
+      }
 
-      await firestore().collection('tasks').add({
-        title: newTaskTitle.trim(),
-        location: newTaskLocation.trim(),
-        weekday: selectedWeekday,
-        startTime: firestore.Timestamp.fromDate(taskDate),
-        endTime: firestore.Timestamp.fromDate(taskEndDate),
-        color: selectedColor,
-        status: 'pending',
-        userId: userId,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
-
-      setNewTaskTitle('');
-      setNewTaskLocation('');
-      setSelectedWeekday(0);
-      setStartTime('08:00');
-      setEndTime('09:00');
-      setSelectedColor(colors[0]);
-      setIsAddModalVisible(false);
+      await addTaskToFirestore();
     } catch (error) {
       console.error('Error adding task:', error);
       Alert.alert('Error', 'Failed to add task. Please try again.');
+    }
+  };
+
+  // 将原来的添加任务逻辑抽取为单独的函数
+  const addTaskToFirestore = async () => {
+    const userId = auth().currentUser?.uid;
+    if (!userId || !newTaskTitle.trim()) return;
+
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    
+    const taskDate = new Date();
+    taskDate.setHours(startHour, startMinute, 0);
+
+    const taskEndDate = new Date();
+    taskEndDate.setHours(endHour, endMinute, 0);
+
+    await firestore().collection('tasks').add({
+      content: newTaskTitle.trim(),
+      location: newTaskLocation.trim(),
+      weekday: selectedWeekday,
+      dateTime: firestore.Timestamp.fromDate(taskDate),
+      status: 'pending',
+      userId: userId,
+    });
+
+    setNewTaskTitle('');
+    setNewTaskLocation('');
+    setSelectedWeekday(0);
+    setStartTime('08:00');
+    setEndTime('09:00');
+    setSelectedColor(colors[0]);
+    setIsAddModalVisible(false);
+  };
+
+  // 修改编辑任务的保存函数
+  const handleEditTask = async (editingTask: Task) => {
+    if (!editingTask) return;
+
+    // 检查时间冲突
+    const conflictingTask = checkTimeConflict(
+      editingTask.weekday,
+      format(editingTask.dateTime.toDate(), 'HH:mm'),
+      format(editingTask.dateTime.toDate(), 'HH:mm'),
+      tasks,
+      editingTask.id // 排除当前正在编辑的任务
+    );
+
+    if (conflictingTask) {
+      Alert.alert(
+        t.timeConflict || '时间冲突',
+        `${t.conflictWith || '与以下任务时间冲突'}: ${conflictingTask.content} (${format(conflictingTask.dateTime.toDate(), 'HH:mm')} - ${format(conflictingTask.dateTime.toDate(), 'HH:mm')})`,
+        [
+          {
+            text: t.cancel || '取消',
+            style: 'cancel'
+          },
+          {
+            text: t.continue || '继续保存',
+            onPress: async () => {
+              await updateTaskInFirestore(editingTask);
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    await updateTaskInFirestore(editingTask);
+  };
+
+  // 将原来的更新任务逻辑抽取为单独的函数
+  const updateTaskInFirestore = async (task: Task) => {
+    try {
+      await firestore()
+        .collection('tasks')
+        .doc(task.id)
+        .update(task);
+      setIsEditModalVisible(false);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error updating task:', error);
+      Alert.alert('Error', 'Failed to update task. Please try again.');
+    }
+  };
+
+  // 修改同步函数
+  const handleSync = async () => {
+    if (isSyncing) return;
+    
+    setIsSyncing(true);
+    try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) return;
+
+      // 从服务器获取最新任务
+      const serverSnapshot = await firestore()
+        .collection('tasks')
+        .where('userId', '==', userId)
+        .get();
+      
+      const serverTasks = serverSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Task[];
+
+      // 直接使用服务器数据更新本地状态
+      setTasks(serverTasks);
+      Alert.alert(t.syncSuccess);
+    } catch (error) {
+      console.error('Sync error:', error);
+      Alert.alert(t.syncFailed);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -430,6 +610,16 @@ export const ScheduleScreen = () => {
           onPress={() => setIsAddModalVisible(true)}
         >
           <Text style={styles.primaryButtonText}>{t.addTask}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.topActionButton, styles.primaryButton]}
+          onPress={handleSync}
+          disabled={isSyncing}
+        >
+          <Text style={styles.primaryButtonText}>
+            {isSyncing ? t.syncing : t.sync}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -511,16 +701,16 @@ export const ScheduleScreen = () => {
                       task.status === 'completed' && styles.taskContentCompleted,
                     ]}
                   >
-                    {task.title}
+                    {task.content}
                   </Text>
                   <Text style={styles.taskDateTime}>
-                    {format(task.startTime.toDate(), 'yyyy-MM-dd HH:mm')}
+                    {formatTaskTime(task)}
                   </Text>
                 </View>
                 <View style={styles.taskActions}>
                   <TouchableOpacity
                     style={[styles.taskActionButton, styles.editButton]}
-                    onPress={() => handleEditTask(task)}
+                    onPress={() => openEditModal(task)}
                   >
                     <Text style={styles.taskActionButtonText}>{t.edit}</Text>
                   </TouchableOpacity>
@@ -693,8 +883,8 @@ export const ScheduleScreen = () => {
             <TextInput
               style={styles.modalInputField}
               placeholder={t.taskTitle}
-              value={editingTask?.title || ''}
-              onChangeText={(text) => setEditingTask(prev => prev ? {...prev, title: text} : null)}
+              value={editingTask?.content || ''}
+              onChangeText={(text) => setEditingTask(prev => prev ? {...prev, content: text} : null)}
               autoCapitalize="none"
               autoCorrect={false}
               textContentType="none"
@@ -743,13 +933,13 @@ export const ScheduleScreen = () => {
                 <Text style={styles.modalLabel}>{t.startTime}</Text>
                 <TextInput
                   style={styles.timeInput}
-                  value={editingTask ? format(editingTask.startTime.toDate(), 'HH:mm') : ''}
+                  value={editingTask ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
                   onChangeText={(text) => {
                     if (editingTask) {
                       const [hours, minutes] = text.split(':').map(Number);
-                      const date = editingTask.startTime.toDate();
+                      const date = editingTask.dateTime.toDate();
                       date.setHours(hours || 0, minutes || 0);
-                      setEditingTask({...editingTask, startTime: firestore.Timestamp.fromDate(date)});
+                      setEditingTask({...editingTask, dateTime: firestore.Timestamp.fromDate(date)});
                     }
                   }}
                   placeholder="08:00"
@@ -760,13 +950,13 @@ export const ScheduleScreen = () => {
                 <Text style={styles.modalLabel}>{t.endTime}</Text>
                 <TextInput
                   style={styles.timeInput}
-                  value={editingTask ? format(editingTask.endTime.toDate(), 'HH:mm') : ''}
+                  value={editingTask ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
                   onChangeText={(text) => {
                     if (editingTask) {
                       const [hours, minutes] = text.split(':').map(Number);
-                      const date = editingTask.endTime.toDate();
+                      const date = editingTask.dateTime.toDate();
                       date.setHours(hours || 0, minutes || 0);
-                      setEditingTask({...editingTask, endTime: firestore.Timestamp.fromDate(date)});
+                      setEditingTask({...editingTask, dateTime: firestore.Timestamp.fromDate(date)});
                     }
                   }}
                   placeholder="09:00"
@@ -900,11 +1090,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    gap: 12,
+    gap: 8,
   },
   topActionButton: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 6,
     alignItems: 'center',
