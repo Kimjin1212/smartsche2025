@@ -32,6 +32,7 @@ interface Task {
   color: string;
   reminderEnabled?: boolean;
   reminderOffsetMinutes?: number;
+  version: number;
 }
 
 type Language = 'en' | 'zh' | 'ja' | 'ko';
@@ -329,25 +330,25 @@ export const ScheduleScreen = () => {
     const userId = auth().currentUser?.uid;
     if (!userId) return;
 
-    // 不再使用实时监听，改为普通获取
-    const fetchTasks = async () => {
-      try {
-        const snapshot = await firestore()
-          .collection('tasks')
-          .where('userId', '==', userId)
-          .get();
-        
-        const tasksData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Task[];
-        setTasks(tasksData);
-      } catch (error) {
-        console.error('Error fetching tasks:', error);
-      }
-    };
+    // 使用实时监听
+    const unsubscribe = firestore()
+      .collection('tasks')
+      .where('userId', '==', userId)
+      .onSnapshot(
+        snapshot => {
+          const tasksData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Task[];
+          setTasks(tasksData);
+        },
+        error => {
+          console.error('Error fetching tasks:', error);
+        }
+      );
 
-    fetchTasks();
+    // 清理监听器
+    return () => unsubscribe();
   }, []);
 
   // 处理任务过滤
@@ -417,7 +418,17 @@ export const ScheduleScreen = () => {
   const handleAddTask = async () => {
     try {
       const userId = auth().currentUser?.uid;
-      if (!userId || !newTaskTitle.trim()) return;
+      if (!userId || !newTaskTitle.trim()) {
+        Alert.alert('错误', '请输入任务标题');
+        return;
+      }
+
+      // 验证时间格式
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        Alert.alert('错误', '请输入正确的时间格式 (HH:MM)');
+        return;
+      }
 
       // 检查时间冲突
       const conflictingTask = checkTimeConflict(
@@ -430,7 +441,7 @@ export const ScheduleScreen = () => {
       if (conflictingTask) {
         Alert.alert(
           t.timeConflict || '时间冲突',
-          `${t.conflictWith || '与以下任务时间冲突'}: ${conflictingTask.content} (${format(conflictingTask.dateTime.toDate(), 'HH:mm')} - ${format(conflictingTask.dateTime.toDate(), 'HH:mm')})`,
+          `${t.conflictWith || '与以下任务时间冲突'}: ${conflictingTask.content}`,
           [
             {
               text: t.cancel || '取消',
@@ -448,53 +459,81 @@ export const ScheduleScreen = () => {
       }
 
       await addTaskToFirestore();
-    } catch (error) {
-      console.error('Error adding task:', error);
-      Alert.alert('Error', 'Failed to add task. Please try again.');
+    } catch (error: unknown) {
+      console.error('Error in handleAddTask:', error);
+      Alert.alert('错误', '添加任务失败，请重试');
     }
   };
 
-  // 修改 addTaskToFirestore 函数
   const addTaskToFirestore = async () => {
-    const userId = auth().currentUser?.uid;
-    if (!userId || !newTaskTitle.trim()) return;
+    try {
+      const userId = auth().currentUser?.uid;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
 
-    const [startHour, startMinute] = startTime.split(':').map(Number);
-    const [endHour, endMinute] = endTime.split(':').map(Number);
-    
-    const taskDate = new Date();
-    taskDate.setHours(startHour, startMinute, 0);
+      if (!newTaskTitle.trim()) {
+        Alert.alert('错误', '请输入任务标题');
+        return;
+      }
 
-    const taskEndDate = new Date();
-    taskEndDate.setHours(endHour, endMinute, 0);
+      // 验证时间格式
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        Alert.alert('错误', '请输入正确的时间格式 (HH:MM)');
+        return;
+      }
 
-    const newTask = {
-      content: newTaskTitle.trim(),
-      location: newTaskLocation.trim(),
-      weekday: selectedWeekday,
-      dateTime: firestore.Timestamp.fromDate(taskDate),
-      status: 'pending',
-      userId: userId,
-      reminderEnabled,
-      reminderOffsetMinutes: reminderEnabled ? parseInt(reminderOffsetMinutes) : undefined,
-    };
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const taskDate = new Date();
+      taskDate.setHours(startHour, startMinute, 0);
 
-    const docRef = await firestore().collection('tasks').add(newTask);
-    const task = { ...newTask, id: docRef.id };
-    
-    if (reminderEnabled) {
-      await NotificationService.scheduleTaskReminder(task);
+      // 确保所有必需字段都有值
+      const newTask = {
+        content: newTaskTitle.trim(),
+        location: newTaskLocation.trim() || '',  // 如果为空则使用空字符串
+        weekday: selectedWeekday,
+        dateTime: firestore.Timestamp.fromDate(taskDate),
+        status: 'pending' as const,
+        userId: userId,
+        color: selectedColor || colors[0],  // 如果未选择则使用默认颜色
+        reminderEnabled: Boolean(reminderEnabled),  // 确保是布尔值
+        reminderOffsetMinutes: reminderEnabled ? Math.max(1, parseInt(reminderOffsetMinutes) || 10) : 0,  // 确保是数字
+        version: 1
+      };
+
+      const docRef = firestore().collection('tasks').doc();
+      await firestore().runTransaction(async transaction => {
+        transaction.set(docRef, newTask);
+      });
+
+      if (reminderEnabled) {
+        await NotificationService.scheduleTaskReminder({
+          ...newTask,
+          id: docRef.id
+        });
+      }
+
+      // 重置表单
+      setNewTaskTitle('');
+      setNewTaskLocation('');
+      setSelectedWeekday(0);
+      setStartTime('08:00');
+      setEndTime('09:00');
+      setSelectedColor(colors[0]);
+      setReminderEnabled(false);
+      setReminderOffsetMinutes('10');
+      setIsAddModalVisible(false);
+
+      Alert.alert('成功', '任务已添加');
+    } catch (error: unknown) {
+      console.error('Error in addTaskToFirestore:', error);
+      if (error instanceof Error) {
+        Alert.alert('错误', `添加任务失败: ${error.message}`);
+      } else {
+        Alert.alert('错误', '添加任务失败，请检查输入是否正确');
+      }
     }
-
-    setNewTaskTitle('');
-    setNewTaskLocation('');
-    setSelectedWeekday(0);
-    setStartTime('08:00');
-    setEndTime('09:00');
-    setSelectedColor(colors[0]);
-    setReminderEnabled(false);
-    setReminderOffsetMinutes('10');
-    setIsAddModalVisible(false);
   };
 
   // 修改编辑任务的保存函数
@@ -536,10 +575,26 @@ export const ScheduleScreen = () => {
   // 修改 updateTaskInFirestore 函数
   const updateTaskInFirestore = async (task: Task) => {
     try {
-      await firestore()
-        .collection('tasks')
-        .doc(task.id)
-        .update(task);
+      const taskRef = firestore().collection('tasks').doc(task.id);
+      
+      // Use transaction to handle concurrent updates
+      await firestore().runTransaction(async (transaction) => {
+        const taskDoc = await transaction.get(taskRef);
+        if (!taskDoc.exists) {
+          throw new Error('Task does not exist');
+        }
+        
+        const currentVersion = taskDoc.data()?.version || 0;
+        if (currentVersion !== task.version) {
+          throw new Error('Task was updated by another user');
+        }
+        
+        // Increment version and update task
+        transaction.update(taskRef, {
+          ...task,
+          version: currentVersion + 1
+        });
+      });
 
       if (task.reminderEnabled) {
         await NotificationService.scheduleTaskReminder(task);
@@ -550,8 +605,12 @@ export const ScheduleScreen = () => {
       setIsEditModalVisible(false);
       setEditingTask(null);
     } catch (error) {
-      console.error('Error updating task:', error);
-      Alert.alert('Error', 'Failed to update task. Please try again.');
+      if (error.message === 'Task was updated by another user') {
+        Alert.alert('更新冲突', '该任务已被其他用户更新，请刷新后重试');
+      } else {
+        console.error('Error updating task:', error);
+        Alert.alert('错误', '更新任务失败，请重试');
+      }
     }
   };
 
@@ -562,7 +621,10 @@ export const ScheduleScreen = () => {
     setIsSyncing(true);
     try {
       const userId = auth().currentUser?.uid;
-      if (!userId) return;
+      if (!userId) {
+        Alert.alert('错误', '请先登录');
+        return;
+      }
 
       // 从服务器获取最新任务
       const serverSnapshot = await firestore()
@@ -575,7 +637,16 @@ export const ScheduleScreen = () => {
         ...doc.data()
       })) as Task[];
 
-      // 直接使用服务器数据更新本地状态
+      // 本地任务版本号检查和更新
+      for (const serverTask of serverTasks) {
+        const localTask = tasks.find(t => t.id === serverTask.id);
+        if (!localTask || (serverTask.version > (localTask.version || 0))) {
+          // 服务器版本更新，更新本地任务
+          await firestore().collection('tasks').doc(serverTask.id).set(serverTask);
+        }
+      }
+
+      // 更新本地状态
       setTasks(serverTasks);
       Alert.alert(t.syncSuccess);
     } catch (error) {
@@ -1099,15 +1170,10 @@ export const ScheduleScreen = () => {
                 onPress={async () => {
                   if (editingTask) {
                     try {
-                      await firestore()
-                        .collection('tasks')
-                        .doc(editingTask.id)
-                        .update(editingTask);
-                      setIsEditModalVisible(false);
-                      setEditingTask(null);
+                      await updateTaskInFirestore(editingTask);
                     } catch (error) {
                       console.error('Error updating task:', error);
-                      Alert.alert('Error', 'Failed to update task. Please try again.');
+                      Alert.alert('错误', '更新任务失败，请重试');
                     }
                   }
                 }}
