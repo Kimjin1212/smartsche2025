@@ -933,9 +933,9 @@ export const ScheduleScreen = () => {
                 <Text style={styles.modalLabel}>{t.startTime}</Text>
                 <TextInput
                   style={styles.timeInput}
-                  value={editingTask ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
+                  value={editingTask?.dateTime && editingTask.dateTime instanceof firestore.Timestamp ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
                   onChangeText={(text) => {
-                    if (editingTask) {
+                    if (editingTask && editingTask.dateTime instanceof firestore.Timestamp) {
                       const [hours, minutes] = text.split(':').map(Number);
                       const date = editingTask.dateTime.toDate();
                       date.setHours(hours || 0, minutes || 0);
@@ -950,9 +950,9 @@ export const ScheduleScreen = () => {
                 <Text style={styles.modalLabel}>{t.endTime}</Text>
                 <TextInput
                   style={styles.timeInput}
-                  value={editingTask ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
+                  value={editingTask?.dateTime && editingTask.dateTime instanceof firestore.Timestamp ? format(editingTask.dateTime.toDate(), 'HH:mm') : ''}
                   onChangeText={(text) => {
-                    if (editingTask) {
+                    if (editingTask && editingTask.dateTime instanceof firestore.Timestamp) {
                       const [hours, minutes] = text.split(':').map(Number);
                       const date = editingTask.dateTime.toDate();
                       date.setHours(hours || 0, minutes || 0);
