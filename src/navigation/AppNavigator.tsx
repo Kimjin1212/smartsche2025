@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { LoginScreen } from '../screens/LoginScreen';
@@ -30,17 +29,15 @@ export const AppNavigator = () => {
   if (initializing) return null;
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {!user ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
-        ) : (
-          <>
-            <Stack.Screen name="Schedule" component={ScheduleScreen} />
-            <Stack.Screen name="WeeklySchedule" component={WeeklyScheduleScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {!user ? (
+        <Stack.Screen name="Login" component={LoginScreen} />
+      ) : (
+        <>
+          <Stack.Screen name="Schedule" component={ScheduleScreen} />
+          <Stack.Screen name="WeeklySchedule" component={WeeklyScheduleScreen} />
+        </>
+      )}
+    </Stack.Navigator>
   );
 }; 

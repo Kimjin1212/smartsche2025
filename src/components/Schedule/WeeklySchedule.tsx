@@ -14,6 +14,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import auth from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
+import NotificationService from '../../services/notification';
 
 type WeeklyScheduleNavigationProp = StackNavigationProp<RootStackParamList, 'WeeklySchedule'>;
 type WeeklyScheduleRouteProp = RouteProp<RootStackParamList, 'WeeklySchedule'>;
@@ -54,6 +55,9 @@ interface Translations {
   fri: string;
   sat: string;
   sun: string;
+  reminder: string;
+  reminderOffset: string;
+  minutes: string;
 }
 
 const translations: Record<Language, Translations> = {
@@ -91,6 +95,9 @@ const translations: Record<Language, Translations> = {
     fri: 'FRI',
     sat: 'SAT',
     sun: 'SUN',
+    reminder: 'Reminder',
+    reminderOffset: 'Remind me before',
+    minutes: 'minutes',
   },
   zh: {
     weeklySchedule: '周日程表',
@@ -126,6 +133,9 @@ const translations: Record<Language, Translations> = {
     fri: '周五',
     sat: '周六',
     sun: '周日',
+    reminder: '提醒',
+    reminderOffset: '提前提醒',
+    minutes: '分钟',
   },
   ja: {
     weeklySchedule: '週間スケジュール',
@@ -161,6 +171,9 @@ const translations: Record<Language, Translations> = {
     fri: '金',
     sat: '土',
     sun: '日',
+    reminder: 'リマインダー',
+    reminderOffset: '事前通知',
+    minutes: '分',
   },
   ko: {
     weeklySchedule: '주간 일정',
@@ -196,6 +209,9 @@ const translations: Record<Language, Translations> = {
     fri: '금',
     sat: '토',
     sun: '일',
+    reminder: '알림',
+    reminderOffset: '미리 알림',
+    minutes: '분',
   },
 };
 
@@ -218,6 +234,8 @@ interface RoutineItem {
   endTime: string;
   isRoutine: boolean;
   color?: string;
+  reminderEnabled?: boolean;
+  reminderOffsetMinutes?: number;
 }
 
 interface TaskItem {
@@ -250,6 +268,8 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
   const [routineEndTime, setRoutineEndTime] = useState('09:00');
   const [routineColor, setRoutineColor] = useState('#4CAF50');
   const [message, setMessage] = useState<string | null>(null);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState('10');
 
   const t = translations[routeLanguage as Language] || translations.en;
 
@@ -349,7 +369,8 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
     setRoutineDay(routine.day);
     setRoutineStartTime(routine.startTime);
     setRoutineEndTime(routine.endTime);
-    setRoutineColor(routine.color || '#4CAF50');
+    setReminderEnabled(routine.reminderEnabled || false);
+    setReminderOffsetMinutes(String(routine.reminderOffsetMinutes || 10));
     setIsModalVisible(true);
   };
 
@@ -391,38 +412,56 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
     setRoutineStartTime('08:00');
     setRoutineEndTime('09:00');
     setRoutineColor('#4CAF50');
+    setReminderEnabled(false);
+    setReminderOffsetMinutes('10');
   };
 
   const handleSaveRoutine = async () => {
-    if (!routineTitle.trim()) {
-      Alert.alert('Error', 'Please enter a title');
-      return;
-    }
-
-    const userId = auth().currentUser?.uid;
-    if (!userId) {
-      Alert.alert('Error', 'Please sign in first');
-      return;
-    }
-
     try {
-      const routineData: RoutineItem = {
+      const userId = auth().currentUser?.uid;
+      if (!userId) return;
+
+      const routineData = {
         userId,
-        title: routineTitle.trim(),
-        location: routineLocation.trim() || '',
+        title: routineTitle,
+        location: routineLocation,
         day: routineDay,
         startTime: routineStartTime,
         endTime: routineEndTime,
         isRoutine: true,
-        color: routineColor,
+        reminderEnabled,
+        reminderOffsetMinutes: reminderEnabled ? parseInt(reminderOffsetMinutes) : undefined,
       };
 
       if (editingRoutine?.id) {
-        await firestore().collection('routines').doc(editingRoutine.id).update(routineData);
+        await firestore()
+          .collection('tasks')
+          .doc(editingRoutine.id)
+          .update(routineData);
+
+        if (routineData.reminderEnabled) {
+          await NotificationService.scheduleTaskReminder({
+            ...routineData,
+            id: editingRoutine.id,
+            content: routineData.title,
+            dateTime: firestore.Timestamp.fromDate(new Date()),
+          });
+        } else {
+          await NotificationService.cancelNotification(editingRoutine.id);
+        }
       } else {
-        await firestore().collection('routines').add(routineData);
+        const docRef = await firestore().collection('tasks').add(routineData);
+        
+        if (routineData.reminderEnabled) {
+          await NotificationService.scheduleTaskReminder({
+            ...routineData,
+            id: docRef.id,
+            content: routineData.title,
+            dateTime: firestore.Timestamp.fromDate(new Date()),
+          });
+        }
       }
-      
+
       setIsModalVisible(false);
       resetForm();
       showMessage(t.routineSaved);
@@ -596,31 +635,26 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
         visible={isModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => {
-          setIsModalVisible(false);
-          resetForm();
-        }}
+        onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
               {editingRoutine ? t.editRoutine : t.addRoutine}
             </Text>
-
-            <Text style={styles.inputLabel}>{t.title}</Text>
+            
             <TextInput
               style={styles.input}
+              placeholder={t.title}
               value={routineTitle}
               onChangeText={setRoutineTitle}
-              placeholder={t.title}
             />
-
-            <Text style={styles.inputLabel}>{t.location}</Text>
+            
             <TextInput
               style={styles.input}
+              placeholder={t.location}
               value={routineLocation}
               onChangeText={setRoutineLocation}
-              placeholder={t.location}
             />
 
             <Text style={styles.inputLabel}>{t.day}</Text>
@@ -685,31 +719,54 @@ export const WeeklySchedule: React.FC<WeeklyScheduleProps> = ({ language }) => {
               ))}
             </View>
 
-            <View style={styles.modalButtons}>
-              {editingRoutine && (
-                <TouchableOpacity 
-                  style={styles.deleteButton} 
-                  onPress={handleDeleteRoutine}
+            <View style={styles.reminderContainer}>
+              <Text style={styles.modalLabel}>{t.reminder}</Text>
+              <View style={styles.reminderRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.reminderToggle,
+                    reminderEnabled && styles.reminderToggleActive
+                  ]}
+                  onPress={() => setReminderEnabled(!reminderEnabled)}
                 >
-                  <Text style={styles.deleteButtonText}>{t.delete}</Text>
+                  <Text style={[
+                    styles.reminderToggleText,
+                    reminderEnabled && styles.reminderToggleTextActive
+                  ]}>
+                    {reminderEnabled ? '✓' : ''}
+                  </Text>
                 </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity 
-                style={styles.cancelButton} 
+                {reminderEnabled && (
+                  <View style={styles.reminderOffsetContainer}>
+                    <Text style={styles.modalLabel}>{t.reminderOffset}</Text>
+                    <TextInput
+                      style={styles.reminderOffsetInput}
+                      value={reminderOffsetMinutes}
+                      onChangeText={setReminderOffsetMinutes}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={styles.modalLabel}>{t.minutes}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
                 onPress={() => {
                   setIsModalVisible(false);
                   resetForm();
                 }}
               >
-                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
+                <Text style={styles.buttonText}>{t.cancel}</Text>
               </TouchableOpacity>
               
-              <TouchableOpacity 
-                style={styles.saveButton} 
+              <TouchableOpacity
+                style={[styles.button, styles.saveButton]}
                 onPress={handleSaveRoutine}
               >
-                <Text style={styles.saveButtonText}>{t.save}</Text>
+                <Text style={styles.buttonText}>{t.save}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -816,7 +873,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 10,
   },
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -938,5 +995,60 @@ const styles = StyleSheet.create({
   messageText: {
     color: 'white',
     textAlign: 'center',
+  },
+  modalLabel: {
+    fontSize: 16,
+    marginBottom: 8,
+    color: '#333',
+  },
+  reminderContainer: {
+    marginBottom: 16,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reminderToggle: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reminderToggleActive: {
+    backgroundColor: '#2196F3',
+  },
+  reminderToggleText: {
+    color: 'transparent',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  reminderToggleTextActive: {
+    color: '#fff',
+  },
+  reminderOffsetContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reminderOffsetInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 8,
+    width: 60,
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  button: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+  },
+  buttonText: {
+    color: 'white',
   },
 }); 

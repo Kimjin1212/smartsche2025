@@ -11,6 +11,8 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NavigationContainer } from '@react-navigation/native';
+import notifee from '@notifee/react-native';
 
 const App = () => {
   const [initializing, setInitializing] = useState(true);
@@ -38,6 +40,13 @@ const App = () => {
     return subscriber;
   }, [initializing]);
 
+  useEffect(() => {
+    async function requestPermissions() {
+      await notifee.requestPermission();
+    }
+    requestPermissions();
+  }, []);
+
   if (initializing) {
     return (
       <View style={styles.container}>
@@ -48,7 +57,9 @@ const App = () => {
 
   return (
     <SafeAreaProvider>
-      <AppNavigator />
+      <NavigationContainer>
+        <AppNavigator />
+      </NavigationContainer>
     </SafeAreaProvider>
   );
 };

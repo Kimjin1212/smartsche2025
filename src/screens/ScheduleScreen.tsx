@@ -17,6 +17,7 @@ import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firest
 import { format } from 'date-fns';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { WeeklySchedule } from '../components/Schedule/WeeklySchedule';
+import NotificationService from '../services/notification';
 
 type ScheduleScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Schedule'>;
 
@@ -29,6 +30,8 @@ interface Task {
   status: 'pending' | 'completed';
   weekday: number;
   color: string;
+  reminderEnabled?: boolean;
+  reminderOffsetMinutes?: number;
 }
 
 type Language = 'en' | 'zh' | 'ja' | 'ko';
@@ -77,6 +80,9 @@ const translations = {
     syncing: 'Syncing...',
     syncSuccess: 'Sync completed',
     syncFailed: 'Sync failed',
+    reminder: 'Reminder',
+    reminderOffset: 'Remind me before',
+    minutes: 'minutes',
   },
   zh: {
     welcome: '欢迎, ',
@@ -118,6 +124,9 @@ const translations = {
     syncing: '同步中...',
     syncSuccess: '同步完成',
     syncFailed: '同步失败',
+    reminder: '提醒',
+    reminderOffset: '提前提醒',
+    minutes: '分钟',
   },
   ja: {
     welcome: 'ようこそ、',
@@ -159,6 +168,9 @@ const translations = {
     syncing: '同期中...',
     syncSuccess: '同期完了',
     syncFailed: '同期失敗',
+    reminder: 'リマインダー',
+    reminderOffset: '事前通知',
+    minutes: '分',
   },
   ko: {
     welcome: '환영합니다, ',
@@ -200,6 +212,9 @@ const translations = {
     syncing: '동기화 중...',
     syncSuccess: '동기화 완료',
     syncFailed: '동기화 실패',
+    reminder: '알림',
+    reminderOffset: '미리 알림',
+    minutes: '분',
   },
 };
 
@@ -301,6 +316,8 @@ export const ScheduleScreen = () => {
   const [endTime, setEndTime] = useState('09:00');
   const [selectedColor, setSelectedColor] = useState(colors[0]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState('10');
 
   const t = translations[language];
 
@@ -437,7 +454,7 @@ export const ScheduleScreen = () => {
     }
   };
 
-  // 将原来的添加任务逻辑抽取为单独的函数
+  // 修改 addTaskToFirestore 函数
   const addTaskToFirestore = async () => {
     const userId = auth().currentUser?.uid;
     if (!userId || !newTaskTitle.trim()) return;
@@ -451,14 +468,23 @@ export const ScheduleScreen = () => {
     const taskEndDate = new Date();
     taskEndDate.setHours(endHour, endMinute, 0);
 
-    await firestore().collection('tasks').add({
+    const newTask = {
       content: newTaskTitle.trim(),
       location: newTaskLocation.trim(),
       weekday: selectedWeekday,
       dateTime: firestore.Timestamp.fromDate(taskDate),
       status: 'pending',
       userId: userId,
-    });
+      reminderEnabled,
+      reminderOffsetMinutes: reminderEnabled ? parseInt(reminderOffsetMinutes) : undefined,
+    };
+
+    const docRef = await firestore().collection('tasks').add(newTask);
+    const task = { ...newTask, id: docRef.id };
+    
+    if (reminderEnabled) {
+      await NotificationService.scheduleTaskReminder(task);
+    }
 
     setNewTaskTitle('');
     setNewTaskLocation('');
@@ -466,6 +492,8 @@ export const ScheduleScreen = () => {
     setStartTime('08:00');
     setEndTime('09:00');
     setSelectedColor(colors[0]);
+    setReminderEnabled(false);
+    setReminderOffsetMinutes('10');
     setIsAddModalVisible(false);
   };
 
@@ -505,13 +533,20 @@ export const ScheduleScreen = () => {
     await updateTaskInFirestore(editingTask);
   };
 
-  // 将原来的更新任务逻辑抽取为单独的函数
+  // 修改 updateTaskInFirestore 函数
   const updateTaskInFirestore = async (task: Task) => {
     try {
       await firestore()
         .collection('tasks')
         .doc(task.id)
         .update(task);
+
+      if (task.reminderEnabled) {
+        await NotificationService.scheduleTaskReminder(task);
+      } else {
+        await NotificationService.cancelNotification(task.id);
+      }
+
       setIsEditModalVisible(false);
       setEditingTask(null);
     } catch (error) {
@@ -850,6 +885,38 @@ export const ScheduleScreen = () => {
               ))}
             </View>
 
+            <View style={styles.reminderContainer}>
+              <Text style={styles.modalLabel}>{t.reminder}</Text>
+              <View style={styles.reminderRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.reminderToggle,
+                    reminderEnabled && styles.reminderToggleActive
+                  ]}
+                  onPress={() => setReminderEnabled(!reminderEnabled)}
+                >
+                  <Text style={[
+                    styles.reminderToggleText,
+                    reminderEnabled && styles.reminderToggleTextActive
+                  ]}>
+                    {reminderEnabled ? '✓' : ''}
+                  </Text>
+                </TouchableOpacity>
+                {reminderEnabled && (
+                  <View style={styles.reminderOffsetContainer}>
+                    <Text style={styles.modalLabel}>{t.reminderOffset}</Text>
+                    <TextInput
+                      style={styles.reminderOffsetInput}
+                      value={reminderOffsetMinutes}
+                      onChangeText={setReminderOffsetMinutes}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={styles.modalLabel}>{t.minutes}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.cancelButton]}
@@ -978,6 +1045,42 @@ export const ScheduleScreen = () => {
                   onPress={() => setEditingTask(prev => prev ? {...prev, color} : null)}
                 />
               ))}
+            </View>
+
+            <View style={styles.reminderContainer}>
+              <Text style={styles.modalLabel}>{t.reminder}</Text>
+              <View style={styles.reminderRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.reminderToggle,
+                    editingTask?.reminderEnabled && styles.reminderToggleActive
+                  ]}
+                  onPress={() => setEditingTask(prev => 
+                    prev ? {...prev, reminderEnabled: !prev.reminderEnabled} : null
+                  )}
+                >
+                  <Text style={[
+                    styles.reminderToggleText,
+                    editingTask?.reminderEnabled && styles.reminderToggleTextActive
+                  ]}>
+                    {editingTask?.reminderEnabled ? '✓' : ''}
+                  </Text>
+                </TouchableOpacity>
+                {editingTask?.reminderEnabled && (
+                  <View style={styles.reminderOffsetContainer}>
+                    <Text style={styles.modalLabel}>{t.reminderOffset}</Text>
+                    <TextInput
+                      style={styles.reminderOffsetInput}
+                      value={String(editingTask?.reminderOffsetMinutes || '')}
+                      onChangeText={(text) => setEditingTask(prev =>
+                        prev ? {...prev, reminderOffsetMinutes: parseInt(text) || 0} : null
+                      )}
+                      keyboardType="number-pad"
+                    />
+                    <Text style={styles.modalLabel}>{t.minutes}</Text>
+                  </View>
+                )}
+              </View>
             </View>
 
             <View style={styles.modalButtons}>
@@ -1413,5 +1516,47 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  reminderContainer: {
+    marginBottom: 16,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reminderToggle: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reminderToggleActive: {
+    backgroundColor: '#2196F3',
+  },
+  reminderToggleText: {
+    color: 'transparent',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  reminderToggleTextActive: {
+    color: '#fff',
+  },
+  reminderOffsetContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reminderOffsetInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    padding: 8,
+    width: 60,
+    textAlign: 'center',
+    fontSize: 16,
   },
 }); 
