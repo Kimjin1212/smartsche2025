@@ -15,6 +15,7 @@ import type { StackNavigationProp } from '@react-navigation/stack';
 import auth from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import { format, parse, addHours } from 'date-fns';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { WeeklySchedule } from '../components/Schedule/WeeklySchedule';
 import NotificationService from '../services/notification';
@@ -65,6 +66,7 @@ const translations = {
     taskTitle: 'Title',
     taskLocation: 'Location',
     weekday: 'Weekday',
+    date: 'Date',
     startTime: 'Start Time',
     endTime: 'End Time',
     color: 'Color',
@@ -110,6 +112,7 @@ const translations = {
     taskTitle: '标题',
     taskLocation: '地点',
     weekday: '星期',
+    date: '日期',
     startTime: '开始时间',
     endTime: '结束时间',
     color: '颜色',
@@ -155,6 +158,7 @@ const translations = {
     taskTitle: 'タイトル',
     taskLocation: '場所',
     weekday: '曜日',
+    date: '日付',
     startTime: '開始時間',
     endTime: '終了時間',
     color: 'カラー',
@@ -200,6 +204,7 @@ const translations = {
     taskTitle: '제목',
     taskLocation: '위치',
     weekday: '요일',
+    date: '날짜',
     startTime: '시작 시간',
     endTime: '종료 시간',
     color: '색상',
@@ -301,6 +306,7 @@ const checkTimeConflict = (
 const formatTaskTime = (task: Task) => {
   if (!task.dateTime) return '';
   const date = task.dateTime.toDate();
+  // 直接显示任务的截止时间（设定时间）
   return format(date, 'yyyy-MM-dd HH:mm');
 };
 
@@ -391,6 +397,145 @@ const timePatterns: LanguagePatterns = {
   }
 };
 
+/**
+ * 从任务内容中提取核心显示内容
+ * 该函数会去除常见的时间和日期表达，只保留任务的实际内容，并保护常用词组不被拆分
+ */
+const extractTaskDisplayContent = (content: string): string => {
+  if (!content) return '';
+  
+  // 保护常见词组，防止被错误拆分
+  const commonPhrases = [
+    'business class', 'english class', 'math class', 'science class', 'yoga class',
+    'flight number', 'train number', 'bus number', 'ticket number', 
+    'high school', 'junior high', 'middle school', 'elementary school',
+    'piano lesson', 'guitar lesson', 'music lesson', 'tennis lesson',
+    'team meeting', 'staff meeting', 'board meeting', 'group meeting',
+    'job interview', 'doctor appointment', 'dentist appointment',
+    'family dinner', 'lunch meeting', 'coffee break',
+    'grocery shopping', 'online shopping', 'clothes shopping',
+    'birthday party', 'wedding ceremony', 'office party',
+    'hotel reservation', 'restaurant reservation', 'flight reservation',
+    'swimming pool', 'tennis court', 'basketball court', 'football field',
+    'bus station', 'train station', 'subway station', 'airport terminal',
+    // Korean common phrases
+    '비즈니스 클래스', '영어 수업', '수학 수업', '과학 수업', '요가 수업',
+    '항공편 번호', '열차 번호', '버스 번호', '티켓 번호',
+    '고등학교', '중학교', '초등학교',
+    '피아노 레슨', '기타 레슨', '음악 레슨', '테니스 레슨',
+    '팀 회의', '직원 회의', '이사회', '그룹 미팅',
+    '면접', '병원 예약', '치과 예약',
+    '가족 저녁', '점심 회의', '커피 브레이크',
+    '식료품 쇼핑', '온라인 쇼핑', '의류 쇼핑',
+    '생일 파티', '결혼식', '회사 파티',
+    '호텔 예약', '식당 예약', '항공편 예약',
+    '수영장', '테니스 코트', '농구 코트', '축구장',
+    '버스 정류장', '기차역', '지하철역', '공항 터미널'
+  ];
+  
+  // 临时替换常见词组为标记，以防止它们被拆分
+  let tempContent = content.toLowerCase();
+  const phraseReplacements = new Map<string, string>();
+  
+  commonPhrases.forEach((phrase, i) => {
+    const marker = `__PHRASE${i}__`;
+    const regex = new RegExp('\\b' + phrase.replace(/\s+/g, '\\s+') + '\\b', 'gi');
+    
+    if (regex.test(tempContent)) {
+      tempContent = tempContent.replace(regex, marker);
+      phraseReplacements.set(marker, phrase);
+    }
+  });
+  
+  // 移除日期和时间表达式
+  const patterns = [
+    // 日期相关
+    /今天|今日|明天|明日|后天|下周|下下周|本周|这周/g,
+    /星期[一二三四五六日天]|周[一二三四五六日天]|礼拜[一二三四五六日天]/g,
+    /\b(today|tomorrow|yesterday|next\s*week|last\s*week|this\s*week)\b/gi,
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
+    /\b(mon|tue|wed|thu|fri|sat|sun)\b/gi,
+    
+    // 时间相关
+    /早上|上午|中午|下午|晚上|凌晨|深夜|傍晚|黄昏/g,
+    /([0-9０-９一二三四五六七八九十]+)[点點时時]([0-9０-９半刻]+)?[分]?/g,
+    /([0-9]{1,2})[:.：]([0-9]{2})(\s*(am|pm))?/gi,
+    /\bat\s*\d+(\s*(am|pm))?/gi,
+    /\b(morning|afternoon|evening|night|noon|midnight)\b/gi,
+    
+    // 韩文日期和时间相关
+    /오늘|내일|모레/g,
+    /[월화수목금토일]요일/g,
+    /아침|오전|오후|저녁|밤/g,
+    /(\d{1,2})시\s?(\d{0,2})?분?/g,
+    
+    // 介词和连接词
+    /\b(on|at|in|next|this|about|from|to|by|until)\b/gi,
+    
+    // 日期数字和序数词
+    /\b\d{1,2}(st|nd|rd|th)?\b/g,
+    
+    // 月份名称
+    /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/gi,
+    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/gi,
+    
+    // 日期格式
+    /\b\d{1,4}[\/-]\d{1,2}([\/-]\d{1,4})?\b/g
+  ];
+  
+  // 应用所有模式替换为空格
+  patterns.forEach(pattern => {
+    tempContent = tempContent.replace(pattern, ' ');
+  });
+  
+  // 去除任务前缀词
+  const prefixPatterns = [
+    /^(需要|记得|别忘了|别忘|提醒|记住|安排|完成|做|办|处理|准备|参加|开始|结束|任务:|提醒:|备忘:|安排:)/g,
+    /^(need to|have to|must|should|going to|will|remember to|don't forget to|to|task:|assignment:|reminder:)/gi,
+    /^(해야 할|기억|잊지 마|상기시켜|일정|완료|준비|참가|시작|끝|작업:|알림:|메모:|일정:)/gi
+  ];
+  
+  prefixPatterns.forEach(pattern => {
+    tempContent = tempContent.replace(pattern, '');
+  });
+  
+  // 清理多余空格
+  tempContent = tempContent.replace(/\s+/g, ' ').trim();
+  
+  // 恢复受保护词组
+  phraseReplacements.forEach((phrase, marker) => {
+    tempContent = tempContent.replace(marker, phrase);
+  });
+  
+  // 再次清理空格
+  tempContent = tempContent.replace(/\s+/g, ' ').trim();
+  
+  // 如果提取后的内容为空，则尝试从原始内容提取关键词
+  if (!tempContent) {
+    // 按空格分割得到所有单词
+    const words = content.trim().split(/\s+/);
+    
+    // 过滤掉短词和数字
+    const keyWords = words.filter(word => 
+      word.length > 3 && 
+      !/^\d+$/.test(word) && 
+      !patterns.some(pattern => pattern.test(word.toLowerCase()))
+    );
+    
+    // 如果有关键词，返回第一个；否则返回原始内容的第一个单词
+    if (keyWords.length > 0) {
+      return keyWords[0].charAt(0).toUpperCase() + keyWords[0].slice(1).toLowerCase();
+    } else if (words.length > 0) {
+      return words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
+    }
+    
+    return content;
+  }
+  
+  // 首字母大写
+  return tempContent.charAt(0).toUpperCase() + tempContent.slice(1);
+};
+
 export const ScheduleScreen = () => {
   const navigation = useNavigation<ScheduleScreenNavigationProp>();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -414,6 +559,10 @@ export const ScheduleScreen = () => {
   const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState('10');
   const [isQuickNoteModalVisible, setIsQuickNoteModalVisible] = useState(false);
   const [quickNoteText, setQuickNoteText] = useState('');
+  // 存储NLP解析出的日期
+  const [parsedDate, setParsedDate] = useState<Date | null>(null);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const t = translations[language];
 
@@ -509,6 +658,18 @@ export const ScheduleScreen = () => {
     }
   };
 
+  // 处理日期选择
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    const currentDate = selectedDate || new Date();
+    setShowDatePicker(false);
+    setSelectedDate(currentDate);
+    
+    // 根据选择的日期更新星期几
+    const weekday = currentDate.getDay(); // 0-6, 0是周日
+    const adjustedWeekday = weekday === 0 ? 6 : weekday - 1;
+    setSelectedWeekday(adjustedWeekday);
+  };
+
   // 修改添加任务的函数
   const handleAddTask = async () => {
     try {
@@ -579,9 +740,22 @@ export const ScheduleScreen = () => {
         return;
       }
 
+      // 解析时间
       const [startHour, startMinute] = startTime.split(':').map(Number);
-      const taskDate = new Date();
-      taskDate.setHours(startHour, startMinute, 0);
+      
+      // 使用NLP解析的日期（如果有）或用户选择的日期
+      let taskDate: Date;
+      if (parsedDate) {
+        // 使用NLP解析的日期，但更新小时和分钟
+        taskDate = new Date(parsedDate);
+        taskDate.setHours(startHour, startMinute, 0);
+        console.log('使用NLP解析的日期：', taskDate.toString());
+      } else {
+        // 使用用户选择的日期和时间
+        taskDate = new Date(selectedDate);
+        taskDate.setHours(startHour, startMinute, 0);
+        console.log('使用用户选择的日期：', taskDate.toString());
+      }
 
       // 确保所有必需字段都有值
       const newTask = {
@@ -618,6 +792,8 @@ export const ScheduleScreen = () => {
       setSelectedColor(colors[0]);
       setReminderEnabled(false);
       setReminderOffsetMinutes('10');
+      setParsedDate(null); // 清除保存的日期
+      setSelectedDate(new Date()); // 重置选择的日期
       setIsAddModalVisible(false);
 
       Alert.alert('成功', '任务已添加');
@@ -699,8 +875,8 @@ export const ScheduleScreen = () => {
 
       setIsEditModalVisible(false);
       setEditingTask(null);
-    } catch (error) {
-      if (error.message === 'Task was updated by another user') {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message === 'Task was updated by another user') {
         Alert.alert('更新冲突', '该任务已被其他用户更新，请刷新后重试');
       } else {
         console.error('Error updating task:', error);
@@ -880,6 +1056,10 @@ export const ScheduleScreen = () => {
       setNewTaskTitle(content);
       
       if (date) {
+        // 保存解析出的完整日期，用于后续创建任务
+        setParsedDate(date);
+        setSelectedDate(date); // 同时更新选择的日期
+        
         // 记录原始时间进行调试
         console.log('原始日期时间字符串:', date.toString());
         console.log('原始小时:', date.getHours());
@@ -905,6 +1085,9 @@ export const ScheduleScreen = () => {
         console.log('调整后的星期几索引 (0=周一):', adjustedWeekday);
         
         setSelectedWeekday(adjustedWeekday);
+      } else {
+        // 如果没有日期，清除保存的日期
+        setParsedDate(null);
       }
       
       // 打开任务编辑模态框
@@ -912,8 +1095,9 @@ export const ScheduleScreen = () => {
     } catch (error) {
       // Convert unknown error to string or just show generic message
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      Alert.alert(t.error, errorMessage);
-      return { date: new Date(), content: text, location: "" };
+      Alert.alert('错误', errorMessage);
+      setParsedDate(null);
+      return { date: new Date(), content: content, location: "" };
     }
   };
 
@@ -1074,7 +1258,7 @@ export const ScheduleScreen = () => {
                       task.status === 'completed' && styles.taskContentCompleted,
                     ]}
                   >
-                    {task.content}
+                    {extractTaskDisplayContent(task.content)}
                   </Text>
                   <Text style={styles.taskDateTime}>
                     {formatTaskTime(task)}
@@ -1184,6 +1368,26 @@ export const ScheduleScreen = () => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            {/* 添加日期选择器 */}
+            <Text style={styles.modalLabel}>{t.date}</Text>
+            <TouchableOpacity 
+              style={styles.datePickerButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.datePickerButtonText}>
+                {format(selectedDate, 'yyyy-MM-dd')}
+              </Text>
+            </TouchableOpacity>
+            
+            {showDatePicker && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="date"
+                display="default"
+                onChange={onDateChange}
+              />
+            )}
 
             <View style={styles.timeContainer}>
               <View style={styles.timeField}>
@@ -1486,11 +1690,63 @@ export const ScheduleScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.saveButton]}
-                onPress={() => {
-                  // Use NLPService to process the quick note
-                  const nlpService = NLPService.getInstance();
-                  const result = nlpService.parse(quickNoteText);
-                  handleQuickNoteProcessed(result.date, result.content);
+                onPress={async () => {
+                  try {
+                    // 使用NLP服务解析输入
+                    const nlpService = NLPService.getInstance();
+                    const result = nlpService.parse(quickNoteText);
+                    
+                    // 如果解析不到日期，显示提示
+                    if (!result.date) {
+                      Alert.alert('信息', '未能识别日期时间，将使用默认时间');
+                    }
+                    
+                    // 直接创建任务而不打开任务编辑窗口
+                    const taskDate = result.date || new Date();
+                    const weekday = taskDate.getDay() === 0 ? 6 : taskDate.getDay() - 1; // 调整为0=周一，6=周日
+                    
+                    const startTimeString = format(taskDate, 'HH:mm');
+                    // 结束时间设为开始时间后一小时
+                    const endDate = new Date(taskDate);
+                    endDate.setHours(taskDate.getHours() + 1);
+                    const endTimeString = format(endDate, 'HH:mm');
+                    
+                    const randomColorIndex = Math.floor(Math.random() * colors.length);
+                    const taskColor = colors[randomColorIndex];
+                    
+                    // 创建任务
+                    if (currentUser) {
+                      const newTask: Omit<Task, 'id'> = {
+                        userId: currentUser.uid,
+                        content: result.content,
+                        dateTime: firestore.Timestamp.fromDate(taskDate),
+                        location: '',
+                        status: 'pending',
+                        weekday: weekday,
+                        color: taskColor,
+                        version: 1,
+                      };
+                      
+                      // 保存到Firestore
+                      await firestore().collection('tasks').add(newTask);
+                      
+                      // 可能需要的本地处理
+                      const newTaskWithId = { 
+                        ...newTask, 
+                        id: Date.now().toString() // 只是临时ID
+                      };
+                      setTasks([...tasks, newTaskWithId as Task]);
+                      
+                      console.log('随手记任务已保存:', newTaskWithId);
+                    }
+                    
+                    // 关闭随手记窗口并清空输入
+                    setIsQuickNoteModalVisible(false);
+                    setQuickNoteText('');
+                  } catch (error) {
+                    console.error('保存随手记任务出错:', error);
+                    Alert.alert('错误', '保存任务失败，请重试');
+                  }
                 }}
               >
                 <Text style={styles.saveButtonText}>{t.save}</Text>
@@ -1957,5 +2213,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
+  },
+  datePickerButton: {
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 4,
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#333',
   },
 }); 
