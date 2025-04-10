@@ -19,6 +19,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import { WeeklySchedule } from '../components/Schedule/WeeklySchedule';
 import NotificationService from '../services/notification';
 import { NLPService } from '../services/nlpService';
+import QuickNoteInput from '../components/Schedule/QuickNoteInput';
 
 type ScheduleScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Schedule'>;
 
@@ -869,38 +870,50 @@ export const ScheduleScreen = () => {
     };
   };
 
-  // 修改处理提交的函数
-  const handleQuickNoteSubmit = async () => {
+  // 处理随手记笔记
+  const handleQuickNoteProcessed = (date: Date | null, content: string) => {
     try {
-      if (!quickNoteText.trim()) {
-        Alert.alert('错误', '请输入内容');
-        return;
-      }
-
-      const nlpService = NLPService.getInstance();
-      const parsed = nlpService.parse(quickNoteText);
+      console.log('收到NLP解析结果 - 日期:', date);
+      console.log('收到NLP解析结果 - 内容:', content);
       
       // 设置新任务的值
-      setNewTaskTitle(parsed.content);
-      if (parsed.dateTime) {
-        setStartTime(format(parsed.dateTime, 'HH:mm'));
-        setEndTime(format(addHours(parsed.dateTime, 1), 'HH:mm'));
-        // 获取正确的星期几 (0-6, 0 表示星期日)
-        const weekday = parsed.dateTime.getDay();
-        setSelectedWeekday(weekday);
+      setNewTaskTitle(content);
+      
+      if (date) {
+        // 记录原始时间进行调试
+        console.log('原始日期时间字符串:', date.toString());
+        console.log('原始小时:', date.getHours());
+        console.log('原始分钟:', date.getMinutes());
+        
+        // 设置时间 (确保24小时制格式正确)
+        setStartTime(format(date, 'HH:mm'));
+        
+        // 设置结束时间为开始时间后一小时
+        const endDate = new Date(date);
+        endDate.setHours(date.getHours() + 1);
+        setEndTime(format(endDate, 'HH:mm'));
+        
+        console.log('设置开始时间:', format(date, 'HH:mm'));
+        console.log('设置结束时间:', format(endDate, 'HH:mm'));
+        
+        // 获取星期几 (0-6, 0是周日)
+        const weekday = date.getDay();
+        console.log('原始星期几索引 (0=周日):', weekday);
+        
+        // 调整星期几索引，使星期一为0，星期日为6
+        const adjustedWeekday = weekday === 0 ? 6 : weekday - 1;
+        console.log('调整后的星期几索引 (0=周一):', adjustedWeekday);
+        
+        setSelectedWeekday(adjustedWeekday);
       }
       
-      if (parsed.location) {
-        setNewTaskLocation(parsed.location);
-      }
-
-      // 关闭快速添加模态框，打开任务编辑模态框
-      setIsQuickNoteModalVisible(false);
+      // 打开任务编辑模态框
       setIsAddModalVisible(true);
-      setQuickNoteText('');
-    } catch (error: unknown) {
-      console.error('Error parsing quick note:', error);
-      Alert.alert('错误', '无法解析输入内容，请重试');
+    } catch (error) {
+      // Convert unknown error to string or just show generic message
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      Alert.alert(t.error, errorMessage);
+      return { date: new Date(), content: text, location: "" };
     }
   };
 
@@ -1448,10 +1461,13 @@ export const ScheduleScreen = () => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>随手记</Text>
+            <Text style={styles.modalTitle}>{t.quickNote}</Text>
             <TextInput
               style={[styles.modalInputField, { height: 100, textAlignVertical: 'top' }]}
-              placeholder="例如：明天下午三点去医院"
+              placeholder={language === 'zh' ? "例如：明天下午三点去医院" : 
+                          language === 'en' ? "Example: Going to hospital tomorrow at 3 PM" :
+                          language === 'ja' ? "例：明日の午後3時に病院に行く" :
+                          language === 'ko' ? "예시: 내일 오후 3시에 병원에 가기" : ""}
               value={quickNoteText}
               onChangeText={setQuickNoteText}
               multiline
@@ -1470,7 +1486,12 @@ export const ScheduleScreen = () => {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.saveButton]}
-                onPress={handleQuickNoteSubmit}
+                onPress={() => {
+                  // Use NLPService to process the quick note
+                  const nlpService = NLPService.getInstance();
+                  const result = nlpService.parse(quickNoteText);
+                  handleQuickNoteProcessed(result.date, result.content);
+                }}
               >
                 <Text style={styles.saveButtonText}>{t.save}</Text>
               </TouchableOpacity>
@@ -1918,5 +1939,23 @@ const styles = StyleSheet.create({
     width: 60,
     textAlign: 'center',
     fontSize: 16,
+  },
+  headerButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginVertical: 10,
+    paddingHorizontal: 15,
+  },
+  addButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 4,
+    backgroundColor: '#2196F3',
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 }); 
