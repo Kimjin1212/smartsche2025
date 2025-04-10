@@ -107,7 +107,7 @@ const timePatterns: {[key: string]: TimePattern} = {
   // 中文时间模式
   zh: {
     // 标准时间格式 (1点30分, 13:30, 1点半, 1点1刻)
-    standard: /([上下]午|早上|晚上|傍晚|凌晨|中午)?[ ]?([\d一二三四五六七八九十两]+)[点點时時](?:([\d一二三四五六七八九十两半刻]+)[分]?)?|(\d{1,2})[:：](\d{1,2})/,
+    standard: /([上下]午|早上|晚上|傍晚|凌晨|中午)?[ ]?([\d一二三四五六七八九十]+)[点點时時](?:([\d一二三四五六七八九十半刻]+)[分]?)?|(\d{1,2})[:：](\d{1,2})/,
     // 上午/下午标记
     am: /上午|早上|早晨|凌晨|清晨|一早/,
     pm: /下午|晚上|傍晚|夜晚|黄昏|夜间|晚间|午后|中午|正午/,
@@ -753,11 +753,8 @@ function protectCommonPhrases(text: string): { processedText: string, phraseMap:
 function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): number {
   if (!numStr) return 0;
   
-  console.log(`[Debug Number Parse] Parsing number string: "${numStr}" for language: ${lang}`);
-  
   // 如果已经是数字，直接返回
   if (/^\d+$/.test(numStr)) {
-    console.log(`[Debug Number Parse] String is already numeric, returning: ${parseInt(numStr)}`);
     return parseInt(numStr);
   }
   
@@ -770,25 +767,21 @@ function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): num
     
     // 简单中文数字转换 (一、二、三...)
     if (numStr.length === 1 && chineseNumMap[numStr]) {
-      console.log(`[Debug Number Parse] Parsed single Chinese digit: ${numStr} -> ${chineseNumMap[numStr]}`);
       return chineseNumMap[numStr];
     }
     
     // 处理"十X"格式 (十一、十二...)
     if (numStr.startsWith('十') && numStr.length === 2) {
-      console.log(`[Debug Number Parse] Parsed "ten plus" format: ${numStr} -> ${10 + chineseNumMap[numStr[1]]}`);
       return 10 + chineseNumMap[numStr[1]];
     }
     
     // 处理"X十"格式 (二十、三十...)
     if (numStr.length === 2 && numStr.endsWith('十')) {
-      console.log(`[Debug Number Parse] Parsed "X ten" format: ${numStr} -> ${chineseNumMap[numStr[0]] * 10}`);
       return chineseNumMap[numStr[0]] * 10;
     }
     
     // 处理"X十Y"格式 (二十一、三十二...)
     if (numStr.length === 3 && numStr[1] === '十') {
-      console.log(`[Debug Number Parse] Parsed "X ten Y" format: ${numStr} -> ${chineseNumMap[numStr[0]] * 10 + chineseNumMap[numStr[2]]}`);
       return chineseNumMap[numStr[0]] * 10 + chineseNumMap[numStr[2]];
     }
   }
@@ -804,13 +797,11 @@ function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): num
     
     const lowerNumStr = numStr.toLowerCase();
     if (englishNumMap[lowerNumStr] !== undefined) {
-      console.log(`[Debug Number Parse] Parsed English word: ${numStr} -> ${englishNumMap[lowerNumStr]}`);
       return englishNumMap[lowerNumStr];
     }
   }
   
   // 如果无法解析，返回0
-  console.log(`[Debug Number Parse] Failed to parse: "${numStr}", returning 0`);
   return 0;
 }
 
@@ -886,30 +877,6 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
     
     // 步骤4: 获取日期时间模式
     const patterns = getDateTimePatterns(lang);
-    
-    // --- MOVED UP: Global time marker detection BEFORE date parsing ---
-    // 先全局检查整个文本是否包含上午/下午/晚上等时间段标记
-    // 这样即使日期识别修改了文本，也能正确捕获时间段标记
-    let globalIsPM: boolean | null = null; // null means not detected
-    let globalTimePrefix = '';
-    
-    // 下午/晚上/傍晚/黄昏/夜晚等属于PM
-    if (/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(processedText)) {
-      globalIsPM = true;
-      const pmMatch = processedText.match(/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/);
-      if (pmMatch) globalTimePrefix = pmMatch[0];
-      console.log(`全局检测到PM时段: ${globalTimePrefix}`);
-    } 
-    // 早上/上午等属于AM
-    else if (/(早上|早晨|凌晨|上午)/.test(processedText)) {
-      globalIsPM = false;
-      const amMatch = processedText.match(/(早上|早晨|凌晨|上午)/);
-      if (amMatch) globalTimePrefix = amMatch[0];
-      console.log(`全局检测到AM时段: ${globalTimePrefix}`);
-    } else {
-      console.log('未检测到全局时间段标记，将使用局部匹配');
-    }
-    // --- END MOVED SECTION ---
     
     // 新增步骤: 尝试解析复合时间表达式
     const { date: complexDate, processed: complexProcessed } = parseComplexTimeExpression(processedText, resultDate, lang);
@@ -993,12 +960,6 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
         
         // 然后处理时间部分
         
-        // --- Add Debug Log ---
-        // 检查日期解析后的文本是否被修改，这可能影响时间解析
-        console.log(`[Debug] 日期解析后的文本: "${processedText}"`);
-        console.log(`[Debug] 全局时间段标记信息: globalIsPM=${globalIsPM}, prefix="${globalTimePrefix}"`);
-        // --- End Debug Log ---
-        
         // 提取小时和分钟
         const timeRegexes = [
           // 下午/晚上X点X分 - 优化正则表达式匹配更多时段词汇
@@ -1010,172 +971,83 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
         ];
         
         let timeFound = false;
-        // --- START MODIFICATION (v3) ---
-        let parsedHours: number | undefined = undefined;
-        let parsedMinutes: number | undefined = undefined;
-        let timeMatchedString = ''; // Store the matched string for context
-        // --- END MODIFICATION (v3) ---
-
+        
         for (const regex of timeRegexes) {
           const timeMatch = processedText.match(regex);
           if (timeMatch) {
             console.log('匹配到中文时间格式:', timeMatch[0]);
-            timeMatchedString = timeMatch[0]; // Store the raw match
             
-            // --- START MODIFICATION (v3) ---
+            // 检查是否是包含时段的格式
             let isPM = false;
-            let currentHours: number | undefined = undefined;
-            let currentMinutes: number | undefined = undefined;
-            let timePrefix = ''; 
-
-            // Determine which regex matched and extract info accordingly
-            // --- Add Log ---
-            console.log(`[Debug Time Parse] Regex ${timeRegexes.indexOf(regex)} matched:`, timeMatch);
-            // --- End Log ---
-            if (regex === timeRegexes[0] && timeMatch[1] && timeMatch[2]) { // Matched prefix + hour (e.g., 晚上五点)
-                timePrefix = timeMatch[1];
-                const hourStr = timeMatch[2];
-                const minuteStr = timeMatch[3] || '0';
-
-                if (/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(timePrefix)) {
-                    isPM = true;
-                    console.log(`检测到PM时段: ${timePrefix}`);
-                } else if (timePrefix) {
-                    console.log(`检测到AM时段: ${timePrefix}`);
-                }
-                
-                currentHours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
-                
-                if (minuteStr === '半') currentMinutes = 30;
-                else if (minuteStr === '刻' || minuteStr === '一刻') currentMinutes = 15;
-                else if (minuteStr === '两刻' || minuteStr === '二刻') currentMinutes = 30;
-                else if (minuteStr === '三刻') currentMinutes = 45;
-                else currentMinutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
-
-            } else if (regex === timeRegexes[1] && timeMatch[1]) { // Matched hour only (e.g., 五点)
-                const hourStr = timeMatch[1];
-                const minuteStr = timeMatch[2] || '0';
-
-                currentHours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
-
-                if (minuteStr === '半') currentMinutes = 30;
-                else if (minuteStr === '刻' || minuteStr === '一刻') currentMinutes = 15;
-                else if (minuteStr === '两刻' || minuteStr === '二刻') currentMinutes = 30;
-                else if (minuteStr === '三刻') currentMinutes = 45;
-                else currentMinutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
-
-                // Check preceding text for time period if no prefix matched directly
-                const matchIndex = timeMatch.index;
-                if (matchIndex !== undefined && matchIndex > 0) {
-                    const textBefore = processedText.substring(0, matchIndex).trim();
-                    const wordsBefore = textBefore.split(/[\s,]+/);
-                    const lastWord = wordsBefore.length > 0 ? wordsBefore[wordsBefore.length - 1] : '';
-                    if (lastWord && /(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(lastWord)) {
-                        isPM = true;
-                        timePrefix = lastWord;
-                        console.log(`根据前置词"${lastWord}"检测到PM时段`);
-                    } else if (lastWord && /(早上|早晨|凌晨|上午)/.test(lastWord)) {
-                        timePrefix = lastWord;
-                        console.log(`根据前置词"${lastWord}"检测到AM时段`);
-                    }
-                }
-
-            } else if (regex === timeRegexes[2] && timeMatch[1]) { // Matched HH:MM
-                const hourStr = timeMatch[1];
-                const minuteStr = timeMatch[2] || '0';
-                currentHours = parseInt(hourStr);
-                currentMinutes = parseInt(minuteStr);
-
-                const matchIndex = timeMatch.index;
-                 if (matchIndex !== undefined && matchIndex > 0) {
-                    const textBefore = processedText.substring(0, matchIndex).trim();
-                    const wordsBefore = textBefore.split(/[\s,]+/);
-                    const lastWord = wordsBefore.length > 0 ? wordsBefore[wordsBefore.length - 1] : '';
-                     if (lastWord && /(下午|晚上|傍晚)/.test(lastWord)) {
-                        if (currentHours > 0 && currentHours < 12) {
-                           isPM = true; 
-                           console.log(`根据前置词"${lastWord}"检测到 ${timeMatch[0]} 的 PM 时段`);
-                        } else if (currentHours === 12) {
-                           isPM = true; 
-                           console.log(`根据前置词"${lastWord}"确认 ${timeMatch[0]} 为 PM (中午)`);
-                        }
-                    } else if (lastWord && /(早上|上午|凌晨)/.test(lastWord)) {
-                         console.log(`根据前置词"${lastWord}"确认 ${timeMatch[0]} 为 AM 时段`);
-                    }
-                }
+            const timePrefix = timeMatch[1] || '';
+            
+            // 更全面的时段判断
+            if (timePrefix) {
+              // 下午/晚上/傍晚/黄昏/夜晚/深夜等属于PM
+              if (/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(timePrefix)) {
+                isPM = true;
+                console.log(`检测到PM时段: ${timePrefix}`);
+              } else {
+                console.log(`检测到AM时段: ${timePrefix}`);
+              }
             }
-
-            // Check if current parsing attempt yielded valid numbers
-            if (currentHours !== undefined && currentMinutes !== undefined && !isNaN(currentHours) && !isNaN(currentMinutes)) {
-                
-                // --- Add Log ---
-                console.log(`[Debug Time Parse] Parsed Raw: hours=${currentHours}, minutes=${currentMinutes}, isPM=${isPM}, prefix='${timePrefix}'`);
-                // If we have a global AM/PM marker, log it
-                if (globalIsPM !== null) {
-                    console.log(`[Debug Time Parse] Using global time marker: globalIsPM=${globalIsPM}, prefix='${globalTimePrefix}'`);
-                }
-                // --- End Log ---
-
-                // Adjust for PM (hours 1-11 become 13-23)
-                // Use globalIsPM if available, otherwise fall back to local isPM
-                const effectiveIsPM = globalIsPM !== null ? globalIsPM : isPM;
-                
-                if (effectiveIsPM && currentHours > 0 && currentHours < 12) {
-                    currentHours += 12;
-                    console.log(`使用${globalIsPM !== null ? '全局' : '局部'}PM时段，转换为24小时制: ${currentHours}`);
-                } 
-                // Adjust for 12 AM (midnight)
-                else if (!effectiveIsPM && currentHours === 12) { 
-                    const effectivePrefix = globalIsPM !== null ? globalTimePrefix : timePrefix;
-                    if (effectivePrefix && /(早上|早晨|凌晨|上午)/.test(effectivePrefix)) {
-                        currentHours = 0; 
-                        console.log(`使用${globalIsPM !== null ? '全局' : '局部'}AM时段，处理12 AM (midnight): ${currentHours}`);
-                    } else {
-                        console.log(`无明确${globalIsPM !== null ? '全局' : '局部'}AM上下文，12点保持为: ${currentHours} (可能为中午)`);
-                    }
-                }
-                
-                // Check for valid hour/minute range
-                if (currentHours >= 0 && currentHours <= 23 && currentMinutes >= 0 && currentMinutes <= 59) {
-                    // Assign to the loop-level variables
-                    parsedHours = currentHours;
-                    parsedMinutes = currentMinutes;
-                    timeFound = true; // Mark that we found a valid time
-                    console.log(`解析成功，暂存时间: ${parsedHours}:${parsedMinutes < 10 ? '0' + parsedMinutes : parsedMinutes}`);
-                    // --- Add Log ---
-                    console.log(`[Debug Time Parse] Time Found! Set timeFound = true.`);
-                    // --- End Log ---
-                    break; // Exit loop once valid time is found and stored
-                } else {
-                     console.warn(`本次解析结果超出有效范围: 小时=${currentHours}, 分钟=${currentMinutes}`);
-                }
-
+            
+            // 提取小时
+            let hourStr = '';
+            let minuteStr = '';
+            
+            if (timeMatch[2]) { // 有小时部分
+              hourStr = timeMatch[2];
+              minuteStr = timeMatch[3] || '0';
+            } else if (timeMatch[1] && /^\d+$/.test(timeMatch[1])) { // 处理第三种格式 (X:X)
+              hourStr = timeMatch[1];
+              minuteStr = timeMatch[2] || '0';
+            }
+            
+            // 如果没有提取到小时，跳过当前匹配
+            if (!hourStr) continue;
+            
+            // 转换中文数字到阿拉伯数字
+            let hours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
+            console.log(`解析小时结果: ${hourStr} -> ${hours}`);
+            
+            let minutes = 0;
+            if (minuteStr === '半') {
+              minutes = 30;
+            } else if (minuteStr === '刻' || minuteStr === '一刻') {
+              minutes = 15;
+            } else if (minuteStr === '两刻' || minuteStr === '二刻') {
+              minutes = 30;
+            } else if (minuteStr === '三刻') {
+              minutes = 45;
             } else {
-                console.warn("未能从当前匹配中提取有效的小时或分钟数字:", timeMatchedString);
+              minutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
             }
-            // --- END MODIFICATION (v3) ---
+            
+            console.log(`isPM状态: ${isPM}, 原始小时: ${hours}`);
+            // 处理12小时制到24小时制的转换
+            if (isPM && hours < 12) {
+              hours += 12;
+            console.log(`24小时制转换结果: ${hours} -> ${isPM && hours < 12 ? hours + 12 : hours}`);
+              console.log(`转换为24小时制: ${hours}:${minutes}`);
+            } else if (!isPM && hours === 12) {
+              hours = 0; // 12am = 0:00
+            }
+            
+            console.log(`最终解析时间: ${hours}:${minutes < 10 ? '0' + minutes : minutes}`);
+            
+            // 设置时间
+            console.log(`设置时间前状态: ${resultDate.toString()}`);
+            resultDate.setHours(hours, minutes, 0, 0);
+            console.log(`设置时间后状态: ${resultDate.toString()}`);
+            timeProcessed = true;
+            timeFound = true;
+            break;
           }
         }
         
-        // --- START MODIFICATION (v3) ---
-        // Apply the parsed time AFTER the loop if found
-        if (timeFound && parsedHours !== undefined && parsedMinutes !== undefined) {
-             console.log(`设置最终时间: ${parsedHours}:${parsedMinutes < 10 ? '0' + parsedMinutes : parsedMinutes}`);
-             resultDate.setHours(parsedHours, parsedMinutes, 0, 0);
-             timeProcessed = true;
-        } else {
-             // --- Add Log ---
-             console.log(`[Debug Time Parse] No valid time found after loop (timeFound=${timeFound}). Time remains default 00:00 unless fallback applies.`);
-             // --- End Log ---
-         }
-         // --- END MODIFICATION (v3) ---
-
-        // 如果没有找到具体时间，查找时间段表示 (Fallback)
+        // 如果没有找到具体时间，查找时间段表示
         if (!timeFound) {
-          // --- Add Debug Log ---
-          console.log(`[Debug] 所有日期时间处理后的文本: "${processedText}"`); 
-          // --- End Debug Log ---
-          
           // 扩展上午、下午、晚上、早上等粗略时间的识别
           const timeWords: Record<string, number> = patterns.timeWords || {
             '早上': 8, '早晨': 8, '凌晨': 5, '上午': 10, 
@@ -1533,6 +1405,18 @@ export class NLPService {
  */
 export const nlpService = NLPService.getInstance();
 
+// 测试特定输入
+console.log("开始测试特定输入...");
+setTimeout(() => {
+  const testResult = nlpService.parse("下周六晚上八点数学");
+  console.log("测试输入解析结果:", JSON.stringify({
+    date: testResult.date?.toString(),
+    content: testResult.content,
+    hours: testResult.date?.getHours(),
+    minutes: testResult.date?.getMinutes()
+  }, null, 2));
+}, 1000);
+
 /**
  * 支持的语言类型
  */
@@ -1601,13 +1485,11 @@ function removeEnglishDateTimeExpressions(text: string): string {
 function removeChineseDateTimeExpressions(text: string): string {
   if (!text) return '';
   
-  console.log(`[Debug] removeChineseDateTimeExpressions 输入: "${text}"`);
-  
   let result = text;
   
   // 使用更精确的模式匹配日期和时间表达式
   
-  // 1. 先匹配完整的日期表达式（但不包括时间部分）
+  // 1. 先匹配完整的日期表达式
   const fullDatePattern = /(下下[个個]?[周週星期]|下[个個]?[周週星期]|[周週星期礼拜禮拜])[一二三四五六日天]|(下[个個]?月|[上个個]?月|本月)(?:\d{1,2}|[一二三四五六七八九十]{1,2})?(?:号|號|日)?/;
   
   // 针对"下个月18号生日"这种情况，先提取并保存整个日期表达式
@@ -1616,50 +1498,30 @@ function removeChineseDateTimeExpressions(text: string): string {
     console.log('匹配到完整日期表达式:', dateMatch[0]);
     // 将整个日期表达式替换为空
     result = result.replace(dateMatch[0], '');
-    console.log(`[Debug] 移除日期表达式后的文本: "${result}"`);
   } else {
     // 如果没有匹配到完整表达式，则逐步处理
     
     // 移除星期几表达式，注意保留前面的动词
-    const beforeWeekday = result;
     result = result.replace(/[周週星期礼拜禮拜][一二三四五六日天]/g, '');
-    if (beforeWeekday !== result) {
-      console.log(`[Debug] 移除星期表达式后: "${result}"`);
-    }
     
     // 特别处理"下周/下週"等表达式，确保只移除日期前缀
-    const beforeNextWeek = result;
     result = result.replace(/下下[个個]?[周週星期]/g, ''); // 先处理"下下周"
-    if (beforeNextWeek !== result) {
-      console.log(`[Debug] 移除'下下周'后: "${result}"`);
-    }
-    
-    const beforeThisWeek = result;
     result = result.replace(/下[个個]?[周週星期]/g, ''); // 再处理"下周"
-    if (beforeThisWeek !== result) {
-      console.log(`[Debug] 移除'下周'后: "${result}"`);
-    }
     
-    // 移除完整的相对日期表达式 - 但保留可能的时间表达式
-    const beforeNextWeekday = result;
-    result = result.replace(/下下[个個]?[周週星期][一二三四五六日天](?!.*?[点點时時])/g, '');
-    if (beforeNextWeekday !== result) {
-      console.log(`[Debug] 移除'下下周X'后: "${result}"`);
-    }
-    
-    const beforeThisWeekday = result;
-    result = result.replace(/下[个個]?[周週星期][一二三四五六日天](?!.*?[点點时時])/g, '');
-    if (beforeThisWeekday !== result) {
-      console.log(`[Debug] 移除'下周X'后: "${result}"`);
-    }
+    // 移除完整的相对日期表达式
+    result = result.replace(/下下[个個]?[周週星期][一二三四五六日天]/g, '');
+    result = result.replace(/下[个個]?[周週星期][一二三四五六日天]/g, '');
     
     // 移除月份表达式
     result = result.replace(/(下|下个|下個|上|上个|上個|这|這|本)[个個]?月(?:\d{1,2}|[一二三四五六七八九十]{1,2})?(?:号|號|日)?/g, '');
     
     // 移除相对日期表达式
-    result = result.replace(/(今|明|后|昨|前)[天日](?!.*?[点點时時])/g, '');
-    result = result.replace(/(下下|下|下个|下個|下一|今|本|这|這)(?:周|週|星期|月|礼拜|禮拜|年)(?!.*?[点點时時])/g, '');
-    result = result.replace(/(上|上个|上個|上一|前|前个|前個)(?:周|週|星期|月|礼拜|禮拜|年)(?!.*?[点點时時])/g, '');
+    result = result.replace(/(今|明|后|昨|前)[天日]/g, '');
+    result = result.replace(/(下下|下|下个|下個|下一|今|本|这|這)(?:周|週|星期|月|礼拜|禮拜|年)/g, '');
+    result = result.replace(/(上|上个|上個|上一|前|前个|前個)(?:周|週|星期|月|礼拜|禮拜|年)/g, '');
+    
+    // 移除时间表达式 - 允许重复的时间词汇（如"晚上晚上七点"）
+    result = result.replace(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十]+)[点點时時](\d+|[一二三四五六七八九十半刻]+)?[分]?/g, '');
   }
   
   // 移除日期表达式
@@ -1675,13 +1537,9 @@ function removeChineseDateTimeExpressions(text: string): string {
   result = result.replace(/(\d+)个?(?:月|周|星期|週|礼拜|禮拜|小时|小時)(?:后|後|之后|之後|以后|以後)/g, '');
   result = result.replace(/(\d+)[天日](?:后|後|之后|之後|以后|以後)/g, '');
   
-  // 注意：不要删除时间表达式，这样parseQuickNote可以处理它们
-  // result = result.replace(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十]+)[点點时時](\d+|[一二三四五六七八九十半刻]+)?[分]?/g, '');
-  
   // 清理多余空格
   result = result.replace(/\s+/g, ' ').trim();
   
-  console.log(`[Debug] removeChineseDateTimeExpressions 输出: "${result}"`);
   return result;
 }
 
@@ -1723,26 +1581,6 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
   const newDate = new Date(resultDate);
   let dateProcessed = false;
   let timeProcessed = false;
-
-  // 检查是否有"下周三"或"下下周三"这样的表达式以及时间表示
-  if (lang === 'zh' && (/下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text) || 
-      /下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text))) {
-    
-    console.log(`[Debug Complex] 检测到复合日期表达式，原文本: "${text}"`);
-    
-    // 检查是否包含时间表达式
-    const timeMatch = text.match(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十两]+)[点點时時](?:(\d+|[一二三四五六七八九十两半刻]+)[分]?)?/);
-    
-    if (timeMatch) {
-      console.log(`[Debug Complex] 复合表达式中包含时间表示: "${timeMatch[0]}"`);
-      // 保存时间信息，确保在日期处理后能够处理时间
-      const timePrefix = timeMatch[1] || '';
-      const hourStr = timeMatch[2] || '';
-      const minuteStr = timeMatch[3] || '';
-      
-      console.log(`[Debug Complex] 提取的时间信息: 前缀="${timePrefix}", 小时="${hourStr}", 分钟="${minuteStr}"`);
-    }
-  }
 
   // 根据语言处理不同的复合表达式
   if (lang === 'en') {
@@ -1896,8 +1734,6 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
         const weekdayChar = weekdayMatch[1];
         const targetDay = zhWeekdayMap[weekdayChar];
         
-        console.log(`[Debug Complex] 解析"下下周${weekdayChar}"，目标星期: ${targetDay}`);
-        
         // 获取当前日期并重置时间
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -1911,12 +1747,10 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
           daysToAdd += 7;
         }
         
-        // 再加14天，确保是下下周
-        daysToAdd += 14;
+        // 再加7天，确保是下周
+        daysToAdd += 7;
         
-        console.log(`[Debug Complex] 下下周计算: 今天星期${dayOfWeek}，目标星期${targetDay}，需要加${daysToAdd}天`);
-        
-        // 设置日期为下下周目标日期
+        // 设置日期为下周目标日期
         const nextWeekDate = new Date(today);
         nextWeekDate.setDate(today.getDate() + daysToAdd);
         
@@ -1949,25 +1783,19 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
         const weekdayChar = weekdayMatch[1];
         const targetDay = zhWeekdayMap[weekdayChar];
         
-        console.log(`[Debug Complex] 解析"下周${weekdayChar}"，目标星期: ${targetDay}`);
-        
         // 获取当前日期并重置时间
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         // 计算目标星期几与今天相差的天数
-        // 例如：今天是周四(4)，目标是下周一(1)，相差的天数是 (1-4+7) = 4天
         const dayOfWeek = today.getDay(); // 0-6, 周日为0
         
-        // 首先计算本周的目标日期要加的天数
-        let daysToAdd = targetDay - dayOfWeek;
-        
-        // 如果是今天或已经过了本周的目标日期，加7天到下周
-        if (daysToAdd <= 0) {
-          daysToAdd += 7;
+        // 计算下周同一天的日期 (当前日期 + (7 + 目标日 - 当前日) % 7)
+        // 这确保了如果目标日就是今天，我们会得到下周的今天(+7天)
+        let daysToAdd = (7 + targetDay - dayOfWeek) % 7;
+        if (daysToAdd === 0) {
+          daysToAdd = 7; // 如果计算结果是0，表示目标日就是今天，所以加7天到下周
         }
-        
-        console.log(`[Debug Complex] 下周计算: 今天星期${dayOfWeek}，目标星期${targetDay}，需要加${daysToAdd}天`);
         
         // 设置日期为下周目标日期
         const nextWeekDate = new Date(today);
@@ -2032,52 +1860,12 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
       console.log(`设置日期为下个月${day}号:`, newDate);
     }
     
-    // 检查是否需要处理时间信息
-    // 只有当日期已经处理，但时间还没处理时才执行
-    if (dateProcessed && !timeProcessed) {
-      // 尝试从原始文本中提取时间信息
-      const timeMatch = text.match(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十两]+)[点點时時](?:(\d+|[一二三四五六七八九十两半刻]+)[分]?)?/);
-      
-      if (timeMatch) {
-        console.log(`[Debug Complex] 日期处理后，提取时间信息: "${timeMatch[0]}"`);
-        const timePrefix = timeMatch[1] || '';
-        const hourStr = timeMatch[2] || '';
-        const minuteStr = timeMatch[3] || '0';
-        
-        let isPM = false;
-        if (/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(timePrefix)) {
-          isPM = true;
-          console.log(`[Debug Complex] 检测到PM时段: ${timePrefix}`);
-        }
-        
-        let hours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
-        let minutes = 0;
-        
-        if (minuteStr === '半') minutes = 30;
-        else if (minuteStr === '刻' || minuteStr === '一刻') minutes = 15;
-        else if (minuteStr === '两刻' || minuteStr === '二刻') minutes = 30;
-        else if (minuteStr === '三刻') minutes = 45;
-        else minutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
-        
-        // 调整小时
-        if (isPM && hours > 0 && hours < 12) {
-          hours += 12;
-        }
-        
-        console.log(`[Debug Complex] 解析时间结果: ${hours}:${minutes < 10 ? '0' + minutes : minutes}`);
-        
-        // 设置时间
-        newDate.setHours(hours, minutes, 0, 0);
-        timeProcessed = true;
-      }
-    }
-    
     // 其他中文复合表达式处理...
-  } else if (lang === 'ja') {
-    // 日文复合表达式处理
-    // 待实现...
   } else if (lang === 'ko') {
     // 韩文复合表达式处理
+    // 待实现...
+  } else if (lang === 'ja') {
+    // 日文复合表达式处理
     // 待实现...
   }
   
