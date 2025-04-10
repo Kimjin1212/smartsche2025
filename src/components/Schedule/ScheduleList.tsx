@@ -14,6 +14,7 @@ import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firest
 import auth from '@react-native-firebase/auth';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import chrono from 'chrono-node';
 
 interface Schedule {
   id: string;
@@ -145,6 +146,36 @@ export const ScheduleList: React.FC = () => {
       </View>
     </View>
   );
+
+  const parseQuickNote = (text: string) => {
+    // 使用 chrono-node 解析时间
+    const results = chrono.parse(text);
+    if (results.length > 0) {
+      const { start } = results[0];
+      const date = start.date();
+      // 提取事件内容
+      const content = text.replace(results[0].text, '').trim();
+      return { date, content };
+    }
+    return null;
+  };
+
+  const convertKoreanToChinese = (text: string) => {
+    // 简单的正则替换示例
+    return text.replace(/내일/g, '明天').replace(/오후/g, '下午').replace(/시에/g, '点');
+  };
+
+  const handleQuickNoteSubmit = (text: string) => {
+    const convertedText = convertKoreanToChinese(text);
+    const parsed = parseQuickNote(convertedText);
+    if (parsed) {
+      // 使用解析结果
+      console.log('Date:', parsed.date);
+      console.log('Content:', parsed.content);
+    } else {
+      console.log('无法解析输入');
+    }
+  };
 
   return (
     <View style={styles.container}>

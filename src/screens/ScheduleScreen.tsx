@@ -14,10 +14,11 @@ import { useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import auth from '@react-native-firebase/auth';
 import firestore, { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
-import { format } from 'date-fns';
+import { format, parse, addHours } from 'date-fns';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { WeeklySchedule } from '../components/Schedule/WeeklySchedule';
 import NotificationService from '../services/notification';
+import { NLPService } from '../services/nlpService';
 
 type ScheduleScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Schedule'>;
 
@@ -84,6 +85,7 @@ const translations = {
     reminder: 'Reminder',
     reminderOffset: 'Remind me before',
     minutes: 'minutes',
+    quickNote: 'Quick Note',
   },
   zh: {
     welcome: '欢迎, ',
@@ -101,7 +103,7 @@ const translations = {
     edit: '编辑',
     addNewTask: '添加新任务',
     taskContent: '任务内容',
-    taskDateTime: '日期时间',
+    taskDateTime: '日期和时间',
     save: '保存',
     cancel: '取消',
     taskTitle: '标题',
@@ -109,7 +111,7 @@ const translations = {
     weekday: '星期',
     startTime: '开始时间',
     endTime: '结束时间',
-    color: 'Color',
+    color: '颜色',
     monday: '周一',
     tuesday: '周二',
     wednesday: '周三',
@@ -120,7 +122,7 @@ const translations = {
     delete: '删除',
     timeConflict: '时间冲突',
     conflictWith: '与以下任务时间冲突',
-    continue: '继续添加',
+    continue: '继续保存',
     sync: '同步',
     syncing: '同步中...',
     syncSuccess: '同步完成',
@@ -128,6 +130,7 @@ const translations = {
     reminder: '提醒',
     reminderOffset: '提前提醒',
     minutes: '分钟',
+    quickNote: '随手记',
   },
   ja: {
     welcome: 'ようこそ、',
@@ -172,6 +175,7 @@ const translations = {
     reminder: 'リマインダー',
     reminderOffset: '事前通知',
     minutes: '分',
+    quickNote: 'クイックメモ',
   },
   ko: {
     welcome: '환영합니다, ',
@@ -216,6 +220,7 @@ const translations = {
     reminder: '알림',
     reminderOffset: '미리 알림',
     minutes: '분',
+    quickNote: '빠른 메모',
   },
 };
 
@@ -298,6 +303,93 @@ const formatTaskTime = (task: Task) => {
   return format(date, 'yyyy-MM-dd HH:mm');
 };
 
+// 添加自然语言处理相关的类型定义
+interface ParsedSchedule {
+  content: string;
+  dateTime: Date | null;
+  location?: string;
+}
+
+// 添加数字映射类型
+interface NumberMapping {
+  [key: string]: number;
+}
+
+interface TimePatterns {
+  today: RegExp;
+  tomorrow: RegExp;
+  dayAfterTomorrow: RegExp;
+  morning: RegExp;
+  afternoon: RegExp;
+  evening: RegExp;
+  time: RegExp;
+  weekdays: RegExp;
+  numbers: NumberMapping;
+}
+
+interface LanguagePatterns {
+  [key: string]: TimePatterns;
+}
+
+const timePatterns: LanguagePatterns = {
+  zh: {
+    today: /今天|今日/,
+    tomorrow: /明天|明日/,
+    dayAfterTomorrow: /后天|後日/,
+    morning: /早上|上午/,
+    afternoon: /下午|午后/,
+    evening: /晚上|夜晚/,
+    time: /(\d{1,2})[点點時:：](\d{0,2})?|[一二三四五六七八九十]{1,2}[点點時]/,
+    weekdays: /周[一二三四五六日]|星期[一二三四五六日]/,
+    numbers: {
+      '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+      '十一': 11, '十二': 12
+    }
+  },
+  ja: {
+    today: /今日|本日/,
+    tomorrow: /明日/,
+    dayAfterTomorrow: /明後日/,
+    morning: /朝|午前/,
+    afternoon: /午後/,
+    evening: /夜|夕方/,
+    time: /(\d{1,2})時(\d{0,2})?分?|[一二三四五六七八九十]{1,2}時/,
+    weekdays: /[月火水木金土日]曜日/,
+    numbers: {
+      '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+      '十一': 11, '十二': 12
+    }
+  },
+  en: {
+    today: /today/i,
+    tomorrow: /tomorrow/i,
+    dayAfterTomorrow: /day after tomorrow/i,
+    morning: /morning/i,
+    afternoon: /afternoon/i,
+    evening: /evening|night/i,
+    time: /(\d{1,2}):?(\d{0,2})?\s*(am|pm)?|([0-9a-z]+)\s*(am|pm)/i,
+    weekdays: /monday|tuesday|wednesday|thursday|friday|saturday|sunday/i,
+    numbers: {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7,
+      'eight': 8, 'nine': 9, 'ten': 10, 'eleven': 11, 'twelve': 12
+    }
+  },
+  ko: {
+    today: /오늘/,
+    tomorrow: /내일/,
+    dayAfterTomorrow: /모레/,
+    morning: /아침|오전/,
+    afternoon: /오후/,
+    evening: /저녁|밤/,
+    time: /(\d{1,2})시\s?(\d{0,2})?분?|[일이삼사오육칠팔구십]{1,2}시/,
+    weekdays: /[월화수목금토일]요일/,
+    numbers: {
+      '일': 1, '이': 2, '삼': 3, '사': 4, '오': 5, '육': 6, '칠': 7, '팔': 8, '구': 9, '십': 10,
+      '십일': 11, '십이': 12
+    }
+  }
+};
+
 export const ScheduleScreen = () => {
   const navigation = useNavigation<ScheduleScreenNavigationProp>();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -319,6 +411,8 @@ export const ScheduleScreen = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState('10');
+  const [isQuickNoteModalVisible, setIsQuickNoteModalVisible] = useState(false);
+  const [quickNoteText, setQuickNoteText] = useState('');
 
   const t = translations[language];
 
@@ -657,6 +751,159 @@ export const ScheduleScreen = () => {
     }
   };
 
+  // 修改解析函数
+  const parseNaturalLanguage = (text: string): ParsedSchedule => {
+    const detectLanguage = (text: string): Language => {
+      const patterns = {
+        zh: /[\u4e00-\u9fa5]/,
+        ja: /[\u3040-\u309f\u30a0-\u30ff]/,
+        ko: /[\uac00-\ud7af\u1100-\u11ff]/,
+        en: /^[a-zA-Z0-9\s.,!?]*$/,
+      };
+
+      for (const [lang, pattern] of Object.entries(patterns)) {
+        if (pattern.test(text)) {
+          return lang as Language;
+        }
+      }
+      return 'en';
+    };
+
+    const lang = detectLanguage(text);
+    const patterns = timePatterns[lang];
+    const now = new Date();
+    let dateTime = new Date(now);
+    let content = text;
+
+    // 重置时间部分，只保留日期
+    dateTime.setHours(0, 0, 0, 0);
+
+    // 解析相对日期
+    if (patterns.tomorrow.test(text)) {
+      // 设置为明天的日期
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      dateTime = tomorrow;
+      // 获取明天的星期几 (0-6, 0表示星期日)
+      const weekday = tomorrow.getDay();
+      // 转换为我们的格式 (0-6, 0表示周一)
+      const adjustedWeekday = weekday === 0 ? 6 : weekday - 1;
+      setSelectedWeekday(adjustedWeekday);
+    } else if (patterns.dayAfterTomorrow.test(text)) {
+      // 设置为后天的日期
+      const dayAfterTomorrow = new Date(now);
+      dayAfterTomorrow.setDate(now.getDate() + 2);
+      dateTime = dayAfterTomorrow;
+      // 获取后天的星期几 (0-6, 0表示星期日)
+      const weekday = dayAfterTomorrow.getDay();
+      // 转换为我们的格式 (0-6, 0表示周一)
+      const adjustedWeekday = weekday === 0 ? 6 : weekday - 1;
+      setSelectedWeekday(adjustedWeekday);
+    } else {
+      // 如果是今天，使用今天的星期几
+      const weekday = now.getDay();
+      const adjustedWeekday = weekday === 0 ? 6 : weekday - 1;
+      setSelectedWeekday(adjustedWeekday);
+    }
+
+    // 解析时间
+    const parseTimeString = (timeStr: string, lang: Language): number => {
+      const numbers = timePatterns[lang].numbers;
+      return numbers[timeStr] || parseInt(timeStr);
+    };
+
+    const timeMatch = text.match(patterns.time);
+    if (timeMatch) {
+      let hours = 0;
+      let minutes = 0;
+
+      if (lang === 'zh' || lang === 'ja' || lang === 'ko') {
+        // 处理中文/日文/韩文数字
+        const timeStr = timeMatch[0];
+        const numberMatch = timeStr.match(/[一二三四五六七八九十]{1,2}|[일이삼사오육칠팔구십]{1,2}|\d{1,2}/);
+        if (numberMatch) {
+          hours = parseTimeString(numberMatch[0], lang);
+        }
+        const minuteMatch = timeStr.match(/(\d{1,2})分|(\d{1,2})분/);
+        if (minuteMatch) {
+          minutes = parseInt(minuteMatch[1] || minuteMatch[2] || '0');
+        }
+      } else {
+        // 处理英文和数字时间
+        hours = parseInt(timeMatch[1] || '0');
+        minutes = parseInt(timeMatch[2] || '0');
+        
+        if (timeMatch[3]) {
+          const meridiem = timeMatch[3].toLowerCase();
+          if (meridiem === 'pm' && hours < 12) {
+            hours += 12;
+          } else if (meridiem === 'am' && hours === 12) {
+            hours = 0;
+          }
+        }
+      }
+
+      // 处理下午/晚上的情况
+      if (patterns.afternoon.test(text) || patterns.evening.test(text)) {
+        if (hours < 12) hours += 12;
+      }
+
+      // 保持日期不变，只更新时间部分
+      dateTime.setHours(hours, minutes, 0);
+    }
+
+    // 提取内容（移除时间相关文本）
+    content = text.replace(patterns.time, '')
+                 .replace(patterns.today, '')
+                 .replace(patterns.tomorrow, '')
+                 .replace(patterns.dayAfterTomorrow, '')
+                 .replace(patterns.morning, '')
+                 .replace(patterns.afternoon, '')
+                 .replace(patterns.evening, '')
+                 .trim();
+
+    return {
+      content,
+      dateTime,
+      location: '', // 可以进一步解析地点
+    };
+  };
+
+  // 修改处理提交的函数
+  const handleQuickNoteSubmit = async () => {
+    try {
+      if (!quickNoteText.trim()) {
+        Alert.alert('错误', '请输入内容');
+        return;
+      }
+
+      const nlpService = NLPService.getInstance();
+      const parsed = nlpService.parse(quickNoteText);
+      
+      // 设置新任务的值
+      setNewTaskTitle(parsed.content);
+      if (parsed.dateTime) {
+        setStartTime(format(parsed.dateTime, 'HH:mm'));
+        setEndTime(format(addHours(parsed.dateTime, 1), 'HH:mm'));
+        // 获取正确的星期几 (0-6, 0 表示星期日)
+        const weekday = parsed.dateTime.getDay();
+        setSelectedWeekday(weekday);
+      }
+      
+      if (parsed.location) {
+        setNewTaskLocation(parsed.location);
+      }
+
+      // 关闭快速添加模态框，打开任务编辑模态框
+      setIsQuickNoteModalVisible(false);
+      setIsAddModalVisible(true);
+      setQuickNoteText('');
+    } catch (error: unknown) {
+      console.error('Error parsing quick note:', error);
+      Alert.alert('错误', '无法解析输入内容，请重试');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#f8f9fa" barStyle="dark-content" />
@@ -709,6 +956,13 @@ export const ScheduleScreen = () => {
           onPress={() => navigation.navigate('WeeklySchedule', { language })}
         >
           <Text style={styles.primaryButtonText}>{t.weeklySchedule}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.topActionButton, styles.primaryButton]}
+          onPress={() => setIsQuickNoteModalVisible(true)}
+        >
+          <Text style={styles.primaryButtonText}>{t.quickNote}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -1177,6 +1431,46 @@ export const ScheduleScreen = () => {
                     }
                   }
                 }}
+              >
+                <Text style={styles.saveButtonText}>{t.save}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 快速添加模态框 */}
+      <Modal
+        visible={isQuickNoteModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsQuickNoteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>随手记</Text>
+            <TextInput
+              style={[styles.modalInputField, { height: 100, textAlignVertical: 'top' }]}
+              placeholder="例如：明天下午三点去医院"
+              value={quickNoteText}
+              onChangeText={setQuickNoteText}
+              multiline
+              numberOfLines={4}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setIsQuickNoteModalVisible(false);
+                  setQuickNoteText('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleQuickNoteSubmit}
               >
                 <Text style={styles.saveButtonText}>{t.save}</Text>
               </TouchableOpacity>

@@ -13,6 +13,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import { TagInput } from './TagInput';
+import { useTranslation } from 'react-i18next';
 
 interface ScheduleFormProps {
   onSubmit: () => void;
@@ -37,16 +38,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
+  const { t } = useTranslation();
+
   const handleSubmit = async () => {
     if (!title.trim()) {
-      Alert.alert('错误', '请输入日程标题');
+      Alert.alert(t('error'), t('enterTitle'));
       return;
     }
 
     try {
       const currentUser = auth().currentUser;
       if (!currentUser) {
-        Alert.alert('错误', '用户未登录');
+        Alert.alert(t('error'), t('userNotLoggedIn'));
         return;
       }
 
@@ -68,7 +71,7 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({
       onSubmit();
     } catch (error) {
       console.error('Error adding schedule:', error);
-      Alert.alert('错误', '添加日程失败，请重试');
+      Alert.alert(t('error'), t('addScheduleFailed'));
     }
   };
 
@@ -81,25 +84,25 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.label}>标题</Text>
+      <Text style={styles.label}>{t('title')}</Text>
       <TextInput
         style={styles.input}
         value={title}
         onChangeText={setTitle}
-        placeholder="输入日程标题"
+        placeholder={t('titlePlaceholder')}
       />
 
-      <Text style={styles.label}>描述</Text>
+      <Text style={styles.label}>{t('description')}</Text>
       <TextInput
         style={[styles.input, styles.textArea]}
         value={description}
         onChangeText={setDescription}
-        placeholder="输入日程描述"
+        placeholder={t('descriptionPlaceholder')}
         multiline
         numberOfLines={4}
       />
 
-      <Text style={styles.label}>日期和时间</Text>
+      <Text style={styles.label}>{t('dateTime')}</Text>
       <TouchableOpacity
         style={styles.dateButton}
         onPress={() => setShowDatePicker(true)}
@@ -132,18 +135,18 @@ export const ScheduleForm: React.FC<ScheduleFormProps> = ({
         />
       )}
 
-      <Text style={styles.label}>标签</Text>
+      <Text style={styles.label}>{t('tags')}</Text>
       <TagInput tags={tags} onChange={setTags} />
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>保存</Text>
+          <Text style={styles.buttonText}>{t('save')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.button, styles.cancelButton]}
           onPress={onCancel}
         >
-          <Text style={styles.buttonText}>取消</Text>
+          <Text style={styles.buttonText}>{t('cancel')}</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -185,11 +188,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   button: {
+    minWidth: 100,
+    padding: 12,
+    marginHorizontal: 8,
     backgroundColor: '#007AFF',
     borderRadius: 8,
-    padding: 12,
-    flex: 1,
-    marginHorizontal: 8,
   },
   cancelButton: {
     backgroundColor: '#FF3B30',
