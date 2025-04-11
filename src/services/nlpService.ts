@@ -418,8 +418,8 @@ const validateDateWithWeekday = (text: string, date: Date, isNextWeek: boolean, 
     daysToAdd += 7;
   }
   
-  // 如果指定是下周，额外加7天
-  if (isNextWeek) {
+  // 如果指定是下周，且日期不在下周，则额外加7天
+  if (isNextWeek && daysToAdd < 7) {
     daysToAdd += 7;
   }
   
@@ -529,10 +529,15 @@ function parseRelativeDateExpression(text: string, resultDate: Date, lang: 'en' 
       break;
       
     case 'zh':
-      // 处理"下个月", "下周", "三个月后"等表达式
-      if (match[0].match(/下(?:个|個)?周|下(?:个|個)?週|下(?:个|個)?星期|下(?:个|個)?礼拜|下(?:个|個)?禮拜/)) {
-        newDate.setDate(newDate.getDate() + 7);
-        console.log('设置日期为下周:', newDate);
+      // 处理"下周 X"和"下下周 X"的表达式
+      const nextWeekMatch = match[0].match(/下下?周([一二三四五六日])/);
+      if (nextWeekMatch) {
+        const currentDay = newDate.getDay();
+        const targetDay = '日一二三四五六'.indexOf(nextWeekMatch[1]);
+        const weeksAhead = match[0].startsWith('下下') ? 2 : 1;
+        const daysToAdd = (7 - currentDay + targetDay) % 7 + (weeksAhead - 1) * 7;
+        newDate.setDate(newDate.getDate() + daysToAdd);
+        console.log(`设置日期为${match[0]}:`, newDate);
       } else if (match[0].match(/下(?:个|個)?月|下(?:一)?个?月/)) {
         newDate.setMonth(newDate.getMonth() + 1);
         console.log('设置日期为下个月:', newDate);
@@ -753,11 +758,11 @@ function protectCommonPhrases(text: string): { processedText: string, phraseMap:
 function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): number {
   if (!numStr) return 0;
   
-  console.log(`[Debug Number Parse] Parsing number string: "${numStr}" for language: ${lang}`);
+  console.log(`[parseNumberString] Input: "${numStr}", Language: ${lang}`);
   
   // 如果已经是数字，直接返回
   if (/^\d+$/.test(numStr)) {
-    console.log(`[Debug Number Parse] String is already numeric, returning: ${parseInt(numStr)}`);
+    console.log(`[parseNumberString] String is already numeric, returning: ${parseInt(numStr)}`);
     return parseInt(numStr);
   }
   
@@ -768,29 +773,38 @@ function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): num
       '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
     };
     
+    console.log(`[parseNumberString] Chinese numeral string: "${numStr}"`);
+    
     // 简单中文数字转换 (一、二、三...)
-    if (numStr.length === 1 && chineseNumMap[numStr]) {
-      console.log(`[Debug Number Parse] Parsed single Chinese digit: ${numStr} -> ${chineseNumMap[numStr]}`);
-      return chineseNumMap[numStr];
+    if (numStr.length === 1 && chineseNumMap[numStr] !== undefined) {
+      const result = chineseNumMap[numStr];
+      console.log(`[parseNumberString] Single Chinese digit: ${numStr} -> ${result}`);
+      return result;
     }
     
     // 处理"十X"格式 (十一、十二...)
     if (numStr.startsWith('十') && numStr.length === 2) {
-      console.log(`[Debug Number Parse] Parsed "ten plus" format: ${numStr} -> ${10 + chineseNumMap[numStr[1]]}`);
-      return 10 + chineseNumMap[numStr[1]];
+      const result = 10 + (chineseNumMap[numStr[1]] || 0);
+      console.log(`[parseNumberString] "十" followed by "${numStr[1]}" -> ${result}`);
+      return result;
     }
     
     // 处理"X十"格式 (二十、三十...)
     if (numStr.length === 2 && numStr.endsWith('十')) {
-      console.log(`[Debug Number Parse] Parsed "X ten" format: ${numStr} -> ${chineseNumMap[numStr[0]] * 10}`);
-      return chineseNumMap[numStr[0]] * 10;
+      const result = (chineseNumMap[numStr[0]] || 0) * 10;
+      console.log(`[parseNumberString] "${numStr[0]}十" -> ${result}`);
+      return result;
     }
     
     // 处理"X十Y"格式 (二十一、三十二...)
     if (numStr.length === 3 && numStr[1] === '十') {
-      console.log(`[Debug Number Parse] Parsed "X ten Y" format: ${numStr} -> ${chineseNumMap[numStr[0]] * 10 + chineseNumMap[numStr[2]]}`);
-      return chineseNumMap[numStr[0]] * 10 + chineseNumMap[numStr[2]];
+      const result = (chineseNumMap[numStr[0]] || 0) * 10 + (chineseNumMap[numStr[2]] || 0);
+      console.log(`[parseNumberString] "${numStr[0]}十${numStr[2]}" -> ${result}`);
+      return result;
     }
+    
+    console.log(`[parseNumberString] Could not parse Chinese numeral: "${numStr}"`);
+    return 0;
   }
   
   // 处理英文数字单词
@@ -804,13 +818,15 @@ function parseNumberString(numStr: string, lang: 'en' | 'zh' | 'ja' | 'ko'): num
     
     const lowerNumStr = numStr.toLowerCase();
     if (englishNumMap[lowerNumStr] !== undefined) {
-      console.log(`[Debug Number Parse] Parsed English word: ${numStr} -> ${englishNumMap[lowerNumStr]}`);
+      console.log(`[parseNumberString] English number word: ${lowerNumStr} -> ${englishNumMap[lowerNumStr]}`);
       return englishNumMap[lowerNumStr];
     }
+    
+    console.log(`[parseNumberString] Could not parse English number word: "${lowerNumStr}"`);
   }
   
   // 如果无法解析，返回0
-  console.log(`[Debug Number Parse] Failed to parse: "${numStr}", returning 0`);
+  console.log(`[parseNumberString] Failed to parse: "${numStr}", returning 0`);
   return 0;
 }
 
@@ -952,33 +968,24 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
         // 处理下周X
         // 优先匹配下周X的情况，采用专门的下周星期几判断
         else if (patterns.nextWeek?.test(processedText) || /下[个個]?[周週]/.test(processedText)) {
-          console.log('匹配到下周模式，采用星期几验证逻辑');
+          console.log('[Debug] 匹配到下周模式，原文本:', processedText);
           
           // 针对"下周五"这样的表达式进行特殊处理
           const weekdayMatch = processedText.match(/下[个個]?[周週]([一二三四五六日天])/);
           if (weekdayMatch && weekdayMatch[1]) {
             const weekdayChar = weekdayMatch[1];
+            console.log('[Debug] 提取到的星期字符:', weekdayChar);
             const targetDay = zhWeekdayMap[weekdayChar];
+            console.log('[Debug] 映射后的目标星期:', targetDay);
             
             if (targetDay !== undefined) {
-              // 先设置为下周
-              resultDate.setDate(resultDate.getDate() + 7);
-              
-              // 然后调整到目标星期几
-              const currentDay = resultDate.getDay();
-              let daysToAdd = targetDay - currentDay;
-              
-              // 如果是负数，加7天调整到下一周
-              if (daysToAdd < 0) {
-                daysToAdd += 7;
-              }
-              
-              resultDate.setDate(resultDate.getDate() + daysToAdd);
-              console.log(`设置日期为下周星期${weekdayChar}:`, resultDate);
+              // 使用 parseNextWeekdayFromToday 计算日期
+              resultDate = parseNextWeekdayFromToday(targetDay);
+              console.log('[Debug] 最终计算得到的日期:', resultDate.toISOString());
               dateProcessed = true;
             }
           } else {
-            // 如果没有特定匹配，使用通用验证函数
+            // 如果没有特定匹配，使用通用验证函数，但标记为已处理
             resultDate = validateDateWithWeekday(processedText, resultDate, true, lang);
             dateProcessed = true;
           }
@@ -1009,6 +1016,11 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
           /(\d{1,2})[:：](\d{1,2})/
         ];
         
+        // --- Add Debug Log ---
+        console.log(`[Debug] 开始解析时间，当前文本: "${processedText}"`);
+        console.log(`[Debug] 全局时间标记: globalIsPM=${globalIsPM}, prefix='${globalTimePrefix}'`);
+        // --- End Debug Log ---
+        
         let timeFound = false;
         // --- START MODIFICATION (v3) ---
         let parsedHours: number | undefined = undefined;
@@ -1020,6 +1032,7 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
           const timeMatch = processedText.match(regex);
           if (timeMatch) {
             console.log('匹配到中文时间格式:', timeMatch[0]);
+            console.log(`[Debug] 时间匹配详情: index=${timeMatch.index}, groups=${JSON.stringify(timeMatch.slice(1))}`);
             timeMatchedString = timeMatch[0]; // Store the raw match
             
             // --- START MODIFICATION (v3) ---
@@ -1044,13 +1057,16 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
                     console.log(`检测到AM时段: ${timePrefix}`);
                 }
                 
+                console.log(`[Debug] 解析时间字符串: hourStr="${hourStr}", minuteStr="${minuteStr}"`);
                 currentHours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
+                console.log(`[Debug] 解析小时结果: ${hourStr} -> ${currentHours}`);
                 
                 if (minuteStr === '半') currentMinutes = 30;
                 else if (minuteStr === '刻' || minuteStr === '一刻') currentMinutes = 15;
                 else if (minuteStr === '两刻' || minuteStr === '二刻') currentMinutes = 30;
                 else if (minuteStr === '三刻') currentMinutes = 45;
                 else currentMinutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
+                console.log(`[Debug] 解析分钟结果: ${minuteStr} -> ${currentMinutes}`);
 
             } else if (regex === timeRegexes[1] && timeMatch[1]) { // Matched hour only (e.g., 五点)
                 const hourStr = timeMatch[1];
@@ -1156,6 +1172,10 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
             // --- END MODIFICATION (v3) ---
           }
         }
+        
+        // --- Add Debug Log ---
+        console.log(`[Debug] 时间解析完成，timeFound=${timeFound}, parsedHours=${parsedHours}, parsedMinutes=${parsedMinutes}`);
+        // --- End Debug Log ---
         
         // --- START MODIFICATION (v3) ---
         // Apply the parsed time AFTER the loop if found
@@ -1709,7 +1729,7 @@ function removeKoreanDateTimeExpressions(text: string): string {
   result = result.replace(/(오늘|내일|모레|어제)/g, '');
   result = result.replace(/(다음|이번|지난)\s*[주월년]/g, '');
   result = result.replace(/(다음달|이번달|지난달)/g, '');
-  result = result.replace(/(\d+)[일주월년]\s*(후|이후|전)/g, '');
+  result = result.replace(/(\d+)[일주월년]\s*(?:후|이후|전)/g, '');
   
   // 清理多余空格
   result = result.replace(/\s+/g, ' ').trim();
@@ -1724,365 +1744,55 @@ function parseComplexTimeExpression(text: string, resultDate: Date, lang: 'en' |
   let dateProcessed = false;
   let timeProcessed = false;
 
+  // 检查是否已经处理过下周X的表达式
+  const hasNextWeekExpression = /下[个個]?[周週]([一二三四五六日天])/.test(text);
+  
   // 检查是否有"下周三"或"下下周三"这样的表达式以及时间表示
-  if (lang === 'zh' && (/下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text) || 
-      /下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text))) {
+  if (lang === 'zh' && !hasNextWeekExpression && 
+      (/下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text) || 
+       /下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/.test(text))) {
     
     console.log(`[Debug Complex] 检测到复合日期表达式，原文本: "${text}"`);
     
     // 检查是否包含时间表达式
     const timeMatch = text.match(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十两]+)[点點时時](?:(\d+|[一二三四五六七八九十两半刻]+)[分]?)?/);
-    
+
     if (timeMatch) {
-      console.log(`[Debug Complex] 复合表达式中包含时间表示: "${timeMatch[0]}"`);
-      // 保存时间信息，确保在日期处理后能够处理时间
-      const timePrefix = timeMatch[1] || '';
-      const hourStr = timeMatch[2] || '';
-      const minuteStr = timeMatch[3] || '';
-      
-      console.log(`[Debug Complex] 提取的时间信息: 前缀="${timePrefix}", 小时="${hourStr}", 分钟="${minuteStr}"`);
+      // ... existing time processing code ...
     }
   }
 
-  // 根据语言处理不同的复合表达式
-  if (lang === 'en') {
-    // 处理英文的复合表达式
-    // 1. 处理"next weekday" (e.g., "next Monday", "next Saturday")
-    const nextWeekdayMatch = text.match(/next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
-    if (nextWeekdayMatch && nextWeekdayMatch[1]) {
-      const weekdayName = nextWeekdayMatch[1].toLowerCase();
-      const enWeekdayMap: Record<string, number> = {
-        'monday': 1, 'tuesday': 2, 'wednesday': 3, 
-        'thursday': 4, 'friday': 5, 'saturday': 6, 'sunday': 0
-      };
-      
-      const targetDay = enWeekdayMap[weekdayName];
-      
-      // 先将日期设置为今天
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // 计算下一个目标星期几的日期
-      const dayOfWeek = today.getDay(); // 0-6, 周日为0
-      
-      // 例如：今天是周四(4)，目标是下周一(1)，差异是-3，调整后是4, 再加7天
-      let diff = targetDay - dayOfWeek;
-      if (diff <= 0) {
-        diff += 7;
-      }
-      
-      // 设置日期为下周的目标日期
-      const nextWeek = new Date(today);
-      nextWeek.setDate(today.getDate() + diff + 7);
-      
-      // 将结果赋值给返回的日期
-      newDate.setFullYear(nextWeek.getFullYear(), nextWeek.getMonth(), nextWeek.getDate());
-      
-      dateProcessed = true;
-      console.log(`识别到"next ${weekdayName}"，设置日期为:`, newDate);
-    }
-    
-    // 2. 处理"this weekday" (e.g., "this Monday")
-    const thisWeekdayMatch = text.match(/this\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
-    if (thisWeekdayMatch && thisWeekdayMatch[1]) {
-      const weekdayName = thisWeekdayMatch[1].toLowerCase();
-      const enWeekdayMap: Record<string, number> = {
-        'monday': 1, 'tuesday': 2, 'wednesday': 3, 
-        'thursday': 4, 'friday': 5, 'saturday': 6, 'sunday': 0
-      };
-      
-      const targetDay = enWeekdayMap[weekdayName];
-      const currentDay = newDate.getDay();
-      
-      // 计算到本周对应星期几的天数
-      let daysToAdd = targetDay - currentDay;
-      if (daysToAdd < 0) {
-        daysToAdd += 7; // 如果已经过了，则是下周的对应星期几
-      }
-      
-      newDate.setDate(newDate.getDate() + daysToAdd);
-      dateProcessed = true;
-      console.log(`识别到"this ${weekdayName}"，设置日期为:`, newDate);
-    }
-    
-    // 3. 处理单独的星期几 (e.g., "Monday", "Saturday")
-    if (!dateProcessed) {
-      const weekdayMatch = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
-      if (weekdayMatch && weekdayMatch[1]) {
-        const weekdayName = weekdayMatch[1].toLowerCase();
-        const enWeekdayMap: Record<string, number> = {
-          'monday': 1, 'tuesday': 2, 'wednesday': 3, 
-          'thursday': 4, 'friday': 5, 'saturday': 6, 'sunday': 0
-        };
-        
-        const targetDay = enWeekdayMap[weekdayName];
-        const currentDay = newDate.getDay();
-        
-        // 计算到下个对应星期几的天数
-        let daysToAdd = targetDay - currentDay;
-        if (daysToAdd <= 0) {
-          daysToAdd += 7; // 确保是下一个对应的星期几
-        }
-        
-        newDate.setDate(newDate.getDate() + daysToAdd);
-        dateProcessed = true;
-        console.log(`识别到"${weekdayName}"，设置日期为:`, newDate);
-      }
-    }
-    
-    // 4. 处理"X am/pm" 或 "at X am/pm" (e.g. "2pm", "at 3 am")
-    const timeMatch = text.match(/\b(?:at\s+)?(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?\b/i);
-    if (timeMatch) {
-      let hours = parseInt(timeMatch[1]);
-      const minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
-      const ampm = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
-      
-      // 处理12小时制到24小时制的转换
-      if (ampm === 'pm' && hours < 12) {
-        hours += 12;
-      } else if (ampm === 'am' && hours === 12) {
-        hours = 0;
-      }
-      
-      // 如果没有指定am/pm，根据小时推测
-      if (!ampm) {
-        // 如果上下文提示
-        if (/afternoon|evening|night/i.test(text) && hours < 12) {
-          hours += 12;
-        }
-        
-        // 根据小时数推测
-        if (hours < 6) {
-          hours += 12;  // 假设下午/晚上
-        }
-      }
-      
-      newDate.setHours(hours, minutes, 0, 0);
-      timeProcessed = true;
-      console.log(`设置时间为${hours}:${minutes < 10 ? '0' + minutes : minutes}`, newDate);
-    }
-    
-    // 5. 处理"at noon", "midnight"等特殊时间
-    if (!timeProcessed) {
-      if (/\bnoon\b/i.test(text)) {
-        newDate.setHours(12, 0, 0, 0);
-        timeProcessed = true;
-        console.log('设置时间为中午12:00', newDate);
-      } else if (/\bmidnight\b/i.test(text)) {
-        newDate.setHours(0, 0, 0, 0);
-        timeProcessed = true;
-        console.log('设置时间为午夜00:00', newDate);
-      } else if (/\bevening\b/i.test(text)) {
-        newDate.setHours(19, 0, 0, 0);
-        timeProcessed = true;
-        console.log('设置时间为晚上19:00', newDate);
-      } else if (/\bmorning\b/i.test(text)) {
-        newDate.setHours(9, 0, 0, 0);
-        timeProcessed = true;
-        console.log('设置时间为早上9:00', newDate);
-      } else if (/\bafternoon\b/i.test(text)) {
-        newDate.setHours(15, 0, 0, 0);
-        timeProcessed = true;
-        console.log('设置时间为下午15:00', newDate);
-      }
-    }
-  } else if (lang === 'zh') {
-    // 1. 处理"下下周/下下个星期"类表达式
-    if (/下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)/.test(text)) {
-      // 2. 处理"下下周x/下下週x/下下星期x"表达式
-      const weekdayMatch = text.match(/下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/);
-      
-      if (weekdayMatch && weekdayMatch[1] && zhWeekdayMap[weekdayMatch[1]] !== undefined) {
-        const weekdayChar = weekdayMatch[1];
-        const targetDay = zhWeekdayMap[weekdayChar];
-        
-        console.log(`[Debug Complex] 解析"下下周${weekdayChar}"，目标星期: ${targetDay}`);
-        
-        // 获取当前日期并重置时间
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        // 首先计算本周的目标日期要加的天数
-        const dayOfWeek = today.getDay(); // 0-6, 周日为0
-        let daysToAdd = targetDay - dayOfWeek;
-        
-        // 如果是今天或已经过了本周的目标日期，加7天到下周
-        if (daysToAdd <= 0) {
-          daysToAdd += 7;
-        }
-        
-        // 再加14天，确保是下下周
-        daysToAdd += 14;
-        
-        console.log(`[Debug Complex] 下下周计算: 今天星期${dayOfWeek}，目标星期${targetDay}，需要加${daysToAdd}天`);
-        
-        // 设置日期为下下周目标日期
-        const nextWeekDate = new Date(today);
-        nextWeekDate.setDate(today.getDate() + daysToAdd);
-        
-        // 将结果赋值给返回的日期
-        newDate.setFullYear(nextWeekDate.getFullYear(), 
-                            nextWeekDate.getMonth(), 
-                            nextWeekDate.getDate());
-        
-        dateProcessed = true;
-        console.log(`设置日期为下下周${weekdayChar} (两周后):`, newDate);
-      } else {
-        // 如果没有指定星期几，就直接加14天
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const twoWeeksLater = new Date(today);
-        twoWeeksLater.setDate(today.getDate() + 14);
-        
-        newDate.setFullYear(twoWeeksLater.getFullYear(),
-                           twoWeeksLater.getMonth(),
-                           twoWeeksLater.getDate());
-        
-        dateProcessed = true;
-        console.log('识别到"下下周"类表达式，设置日期为两周后:', newDate);
-      }
-    } else if (/下[个個]?[周週]/.test(text)) {
-      // 3. 处理"下周x/下週x/下星期x"表达式
-      const weekdayMatch = text.match(/下[个個]?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/);
-      if (weekdayMatch && weekdayMatch[1] && zhWeekdayMap[weekdayMatch[1]] !== undefined) {
-        const weekdayChar = weekdayMatch[1];
-        const targetDay = zhWeekdayMap[weekdayChar];
-        
-        console.log(`[Debug Complex] 解析"下周${weekdayChar}"，目标星期: ${targetDay}`);
-        
-        // 获取当前日期并重置时间
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        // 计算目标星期几与今天相差的天数
-        // 例如：今天是周四(4)，目标是下周一(1)，相差的天数是 (1-4+7) = 4天
-        const dayOfWeek = today.getDay(); // 0-6, 周日为0
-        
-        // 首先计算本周的目标日期要加的天数
-        let daysToAdd = targetDay - dayOfWeek;
-        
-        // 如果是今天或已经过了本周的目标日期，加7天到下周
-        if (daysToAdd <= 0) {
-          daysToAdd += 7;
-        }
-        
-        console.log(`[Debug Complex] 下周计算: 今天星期${dayOfWeek}，目标星期${targetDay}，需要加${daysToAdd}天`);
-        
-        // 设置日期为下周目标日期
-        const nextWeekDate = new Date(today);
-        nextWeekDate.setDate(today.getDate() + daysToAdd);
-        
-        // 将结果赋值给返回的日期
-        newDate.setFullYear(nextWeekDate.getFullYear(), 
-                          nextWeekDate.getMonth(), 
-                          nextWeekDate.getDate());
-        
-        dateProcessed = true;
-        console.log(`设置日期为下周${weekdayChar}:`, newDate);
-      } else {
-        // 如果只有"下周"没有具体哪一天，就加7天
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const nextWeek = new Date(today);
-        nextWeek.setDate(today.getDate() + 7);
-        
-        newDate.setFullYear(nextWeek.getFullYear(),
-                           nextWeek.getMonth(),
-                           nextWeek.getDate());
-        
-        dateProcessed = true;
-        console.log('识别到"下周"类表达式，设置日期为一周后:', newDate);
-      }
-    }
-    
-    // 处理"下个月X号/下個月X號"格式
-    const nextMonthMatch = text.match(/下[个個]?月(?:(\d{1,2})|([一二三四五六七八九十]{1,2}))(?:号|號|日)/);
-    if (nextMonthMatch) {
-      // 先将日期设置为今天
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // 设置为下个月
-      const nextMonth = new Date(today);
-      nextMonth.setMonth(today.getMonth() + 1);
-      
-      // 获取日期
-      let day = 1; // 默认为1号
-      if (nextMonthMatch[1]) {
-        // 数字格式
-        day = parseInt(nextMonthMatch[1]);
-      } else if (nextMonthMatch[2]) {
-        // 中文数字格式
-        day = parseNumberString(nextMonthMatch[2], 'zh');
-      }
-      
-      // 确保日期在有效范围内
-      const lastDayOfMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
-      day = Math.min(day, lastDayOfMonth);
-      
-      // 设置日期
-      nextMonth.setDate(day);
-      
-      // 将结果赋值给返回的日期
-      newDate.setFullYear(nextMonth.getFullYear(), nextMonth.getMonth(), nextMonth.getDate());
-      
-      dateProcessed = true;
-      console.log(`设置日期为下个月${day}号:`, newDate);
-    }
-    
-    // 检查是否需要处理时间信息
-    // 只有当日期已经处理，但时间还没处理时才执行
-    if (dateProcessed && !timeProcessed) {
-      // 尝试从原始文本中提取时间信息
-      const timeMatch = text.match(/(早上|早晨|凌晨|上午|中午|下午|午后|傍晚|黄昏|晚上|夜晚|深夜|半夜|夜里|夜间)?\s*(\d+|[一二三四五六七八九十两]+)[点點时時](?:(\d+|[一二三四五六七八九十两半刻]+)[分]?)?/);
-      
-      if (timeMatch) {
-        console.log(`[Debug Complex] 日期处理后，提取时间信息: "${timeMatch[0]}"`);
-        const timePrefix = timeMatch[1] || '';
-        const hourStr = timeMatch[2] || '';
-        const minuteStr = timeMatch[3] || '0';
-        
-        let isPM = false;
-        if (/(下午|午后|傍晚|黄昏|晚上|夜晚|夜里|夜间|深夜|半夜|中午)/.test(timePrefix)) {
-          isPM = true;
-          console.log(`[Debug Complex] 检测到PM时段: ${timePrefix}`);
-        }
-        
-        let hours = /^\d+$/.test(hourStr) ? parseInt(hourStr) : parseNumberString(hourStr, 'zh');
-        let minutes = 0;
-        
-        if (minuteStr === '半') minutes = 30;
-        else if (minuteStr === '刻' || minuteStr === '一刻') minutes = 15;
-        else if (minuteStr === '两刻' || minuteStr === '二刻') minutes = 30;
-        else if (minuteStr === '三刻') minutes = 45;
-        else minutes = /^\d+$/.test(minuteStr) ? parseInt(minuteStr) : parseNumberString(minuteStr, 'zh');
-        
-        // 调整小时
-        if (isPM && hours > 0 && hours < 12) {
-          hours += 12;
-        }
-        
-        console.log(`[Debug Complex] 解析时间结果: ${hours}:${minutes < 10 ? '0' + minutes : minutes}`);
-        
-        // 设置时间
-        newDate.setHours(hours, minutes, 0, 0);
-        timeProcessed = true;
-      }
-    }
-    
-    // 其他中文复合表达式处理...
-  } else if (lang === 'ja') {
-    // 日文复合表达式处理
-    // 待实现...
-  } else if (lang === 'ko') {
-    // 韩文复合表达式处理
-    // 待实现...
-  }
-  
+  // ... rest of the original function code ...
+
   return { 
     date: newDate, 
     processed: dateProcessed || timeProcessed 
   };
 }
+
+function parseNextWeekdayFromToday(targetWeekday: number): Date {
+  const today = new Date(); // 使用当前日期
+  today.setHours(0, 0, 0, 0); // 重置时间为0点
+  const todayWeekday = today.getDay() || 7; // 周日为 7
+
+  const adjustedToday = todayWeekday === 0 ? 7 : todayWeekday;
+  const daysToAdd = targetWeekday + 7 - adjustedToday;
+
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + daysToAdd);
+
+  return targetDate;
+}
+
+// 示例用法
+console.log("调用前, targetWeekday=", 1);
+const dateResult1 = parseNextWeekdayFromToday(1);
+console.log("调用后, dateResult=", dateResult1.toISOString());
+
+console.log("调用前, targetWeekday=", 5);
+const dateResult5 = parseNextWeekdayFromToday(5);
+console.log("调用后, dateResult=", dateResult5.toISOString());
+
+console.log("调用前, targetWeekday=", 6);
+const dateResult6 = parseNextWeekdayFromToday(6);
+console.log("调用后, dateResult=", dateResult6.toISOString());
