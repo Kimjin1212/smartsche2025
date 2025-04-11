@@ -968,20 +968,23 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
         // 处理下周X
         // 优先匹配下周X的情况，采用专门的下周星期几判断
         else if (patterns.nextWeek?.test(processedText) || /下[个個]?[周週]/.test(processedText)) {
-          console.log('[Debug] 匹配到下周模式，原文本:', processedText);
+          console.log('[Debug Next Week] 匹配到下周模式，原文本:', processedText);
           
           // 针对"下周五"这样的表达式进行特殊处理
           const weekdayMatch = processedText.match(/下[个個]?[周週]([一二三四五六日天])/);
+          console.log('[Debug Next Week] 匹配到的weekdayMatch:', weekdayMatch);
+          
           if (weekdayMatch && weekdayMatch[1]) {
             const weekdayChar = weekdayMatch[1];
-            console.log('[Debug] 提取到的星期字符:', weekdayChar);
+            console.log('[Debug Next Week] 提取到的星期字符:', weekdayChar);
             const targetDay = zhWeekdayMap[weekdayChar];
-            console.log('[Debug] 映射后的目标星期:', targetDay);
+            console.log('[Debug Next Week] 映射后的目标星期:', targetDay);
             
             if (targetDay !== undefined) {
               // 使用 parseNextWeekdayFromToday 计算日期
+              console.log('[Debug Next Week] 调用parseNextWeekdayFromToday前，当前日期:', resultDate.toISOString());
               resultDate = parseNextWeekdayFromToday(targetDay);
-              console.log('[Debug] 最终计算得到的日期:', resultDate.toISOString());
+              console.log('[Debug Next Week] 最终计算得到的日期:', resultDate.toISOString());
               dateProcessed = true;
             }
           } else {
@@ -1774,13 +1777,22 @@ function parseNextWeekdayFromToday(targetWeekday: number): Date {
   const today = new Date(); // 使用当前日期
   today.setHours(0, 0, 0, 0); // 重置时间为0点
   const todayWeekday = today.getDay() || 7; // 周日为 7
-
   const adjustedToday = todayWeekday === 0 ? 7 : todayWeekday;
+
+  console.log('[Debug Next Week] parseNextWeekdayFromToday 输入参数:');
+  console.log('- 当前日期:', today.toISOString());
+  console.log('- 当前星期:', todayWeekday);
+  console.log('- 调整后的当前星期:', adjustedToday);
+  console.log('- 目标星期:', targetWeekday);
+
+  // 计算到下周的天数
   const daysToAdd = targetWeekday + 7 - adjustedToday;
+  console.log('[Debug Next Week] 计算daysToAdd:', daysToAdd, '(公式:', targetWeekday, '+ 7 -', adjustedToday, ')');
 
   const targetDate = new Date(today);
   targetDate.setDate(today.getDate() + daysToAdd);
 
+  console.log('[Debug Next Week] 最终计算的目标日期:', targetDate.toISOString());
   return targetDate;
 }
 
