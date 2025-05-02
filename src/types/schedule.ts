@@ -24,4 +24,18 @@ export interface TaskItem {
   status: string; // pending, completed
   tags?: string[];
   notes?: string;
+  color?: string; // Added color field
+}
+
+export interface TimeSlot {
+  startTime: string;
+  endTime: string;
+  score?: number;
+  explanation?: string;
+}
+
+export interface SmartTimeSlot {
+  startTime: string;
+  endTime: string;
+  explanation: string;
 } 

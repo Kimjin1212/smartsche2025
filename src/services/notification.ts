@@ -1,15 +1,42 @@
 import notifee, { TimestampTrigger, TriggerType } from '@notifee/react-native';
 import { FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+// import PushNotification from 'react-native-push-notification';
 
 interface Task {
   id: string;
   content: string;
   dateTime: FirebaseFirestoreTypes.Timestamp;
+  endTime: FirebaseFirestoreTypes.Timestamp;
   reminderEnabled?: boolean;
   reminderOffsetMinutes?: number;
 }
 
+interface TaskReminder {
+  id: string;
+  content: string;
+  dateTime: Date | FirebaseFirestoreTypes.Timestamp;
+  reminderOffsetMinutes: number;
+}
+
 class NotificationService {
+  constructor() {
+    // PushNotification.configure({
+    //   onRegister: function (token) {
+    //     console.log('TOKEN:', token);
+    //   },
+    //   onNotification: function (notification) {
+    //     console.log('NOTIFICATION:', notification);
+    //   },
+    //   permissions: {
+    //     alert: true,
+    //     badge: true,
+    //     sound: true,
+    //   },
+    //   popInitialNotification: true,
+    //   requestPermissions: true,
+    // });
+  }
+
   async createChannel() {
     await notifee.createChannel({
       id: 'default',
@@ -35,19 +62,27 @@ class NotificationService {
     );
   }
 
-  async scheduleTaskReminder(task: Task) {
-    if (!task.reminderEnabled || !task.reminderOffsetMinutes) {
-      return;
-    }
+  async scheduleTaskReminder(task: TaskReminder) {
+    const taskDate = task.dateTime instanceof Date ? task.dateTime : task.dateTime.toDate();
+    const reminderTime = new Date(taskDate.getTime() - task.reminderOffsetMinutes * 60000);
 
-    const taskTime = task.dateTime.toDate();
-    const reminderTime = new Date(taskTime.getTime() - (task.reminderOffsetMinutes * 60 * 1000));
+    // Using notifee instead of PushNotification
+    const trigger: TimestampTrigger = {
+      type: TriggerType.TIMESTAMP,
+      timestamp: reminderTime.getTime(),
+    };
 
-    if (reminderTime <= new Date()) {
-      return; // 如果提醒时间已过，则不设置提醒
-    }
-
-    await this.scheduleNotification(task.content, reminderTime);
+    await notifee.createTriggerNotification(
+      {
+        id: task.id,
+        title: '任务提醒',
+        body: task.content,
+        android: {
+          channelId: 'default',
+        },
+      },
+      trigger
+    );
   }
 
   async cancelNotification(taskId: string) {
@@ -57,6 +92,10 @@ class NotificationService {
   async cancelAllNotifications() {
     await notifee.cancelAllNotifications();
   }
+
+  cancelTaskReminder = async (taskId: string) => {
+    await notifee.cancelNotification(taskId);
+  };
 }
 
 export default new NotificationService(); 
