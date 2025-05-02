@@ -74,6 +74,7 @@ interface TimePattern {
   nextNextWeek?: RegExp;
   monthDate?: RegExp;
   timeWords?: Record<string, number>;
+  nextMonth?: RegExp;
 }
 
 const timePatterns: {[key: string]: TimePattern} = {
@@ -103,11 +104,13 @@ const timePatterns: {[key: string]: TimePattern} = {
     numericDate: /\b(\d{1,2})(\/|-|\.)(\d{1,2})(?:(\/|-|\.)(\d{2,4}))?\b/,
     // 其他相对表达
     otherRelative: /\b(?:in|after)\s+(\d+)\s+(day|week|month|year)s?\b|\b(\d+)\s+(day|week|month|year)s?\s+(?:from\s+)?(?:now|today)\b/i,
+    nextNextWeek: /下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/,
+    nextMonth: /下(?:个|個)?月(?:份)?(?:\s*(\d+|[一二三四五六七八九十两]+)(?:号|號)?)?/,
   },
   // 中文时间模式
   zh: {
     // 标准时间格式 (1点30分, 13:30, 1点半, 1点1刻)
-    standard: /([上下]午|早上|晚上|傍晚|凌晨|中午)?[ ]?([\d一二三四五六七八九十两]+)[点點时時](?:([\d一二三四五六七八九十两半刻]+)[分]?)?|(\d{1,2})[:：](\d{1,2})/,
+    standard: /([上下]午|早上|晚上|傍晚|凌晨|中午)?[ ]?([\d一二三四五六七八九十]+)[点點时時](?:([\d一二三四五六七八九十半刻]+)[分]?)?|(\d{1,2})[:：](\d{1,2})/,
     // 上午/下午标记
     am: /上午|早上|早晨|凌晨|清晨|一早/,
     pm: /下午|晚上|傍晚|夜晚|黄昏|夜间|晚间|午后|中午|正午/,
@@ -164,6 +167,8 @@ const timePatterns: {[key: string]: TimePattern} = {
     numericDate: /\b(\d{1,2})(\/|-|\.)(\d{1,2})(?:(\/|-|\.)(\d{2,4}))?\b/,
     // 其他相对表达
     otherRelative: /\b(?:in|after)\s+(\d+)\s+(day|week|month|year)s?\b|\b(\d+)\s+(day|week|month|year)s?\s+(?:from\s+)?(?:now|today)\b/i,
+    nextNextWeek: /下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/,
+    nextMonth: /下(?:个|個)?月(?:份)?(?:\s*(\d+|[一二三四五六七八九十两]+)(?:号|號)?)?/,
   },
   // 韩文时间模式
   ko: {
@@ -191,6 +196,8 @@ const timePatterns: {[key: string]: TimePattern} = {
     numericDate: /\b(\d{1,2})월\s*(\d{1,2})일\b/i,
     // 其他相对表达
     otherRelative: /\b(\d+)[일주월년]\s*(?:후|이후|전)\b|\b(?:다음|이번|지난)\s*[주월년]\b|\b(?:다음달|이번달|지난달)\b/i,
+    nextNextWeek: /下下(?:个|個)?(?:周|週|星期|礼拜|禮拜)([一二三四五六日天])/,
+    nextMonth: /下(?:个|個)?月(?:份)?(?:\s*(\d+|[一二三四五六七八九十两]+)(?:号|號)?)?/,
   }
 };
 
@@ -224,7 +231,7 @@ const getChronoOptions = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
  * @param lang 语言代码
  * @returns 日期时间正则模式对象
  */
-const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
+const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko'): TimePattern => {
   switch (lang) {
     case 'en':
       return {
@@ -232,15 +239,13 @@ const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
         tomorrow: /\btomorrow\b/i,
         dayAfterTomorrow: /\bday after tomorrow\b/i,
         nextWeek: /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+        nextNextWeek: /\bnext\s+next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+        nextMonth: /\bnext\s+month\b/i,
         weekday: /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
         weekend: /\bweekend\b/i,
-        // 增强数字日期格式识别能力，支持更多格式
         numericDate: /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12][0-9]|3[01])(?:[\/\-](\d{2,4}))?\b/,
-        // 增加月份日期格式识别能力，支持各种格式的月份日期组合
         monthDate: /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[,\s]*(\d{1,2})(?:st|nd|rd|th)?(?:[,\s]+(\d{4}))?\b/i,
-        // 增强相对日期表达能力 - 扩展相对时间表达
         otherRelative: /\b(?:in|after)\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)s?\b|\b(\d+)\s+(day|days|week|weeks|month|months|year|years)s?\s+(?:from\s+)?(?:now|today)\b|\b(next|coming)\s+(day|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b(last|previous)\s+(day|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-        // 增强时间表达式识别能力
         standard: /\b(\d{1,2})(?::(\d{1,2}))?\s*(?:am|pm|a\.m\.|p\.m\.)??\b/i,
         am: /\b(?:am|a\.m\.|morning)\b/i,
         pm: /\b(?:pm|p\.m\.|afternoon|evening|night)\b/i,
@@ -250,21 +255,17 @@ const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
         today: /今[天日]/,
         tomorrow: /明[天日]|明儿/,
         dayAfterTomorrow: /后[天日]|後[天日]/,
-        // 增强下周X和本周X的匹配能力
         nextWeek: /下[个個]?[周週][一二三四五六日天]|下[个個]?星期[一二三四五六日天]/,
-        // 增加下下周的识别能力
         nextNextWeek: /下下[个個]?[周週][一二三四五六日天]|下下[个個]?星期[一二三四五六日天]/,
+        nextMonth: /下(?:个|個)?月(?:份)?(?:\s*(\d+|[一二三四五六七八九十两]+)(?:号|號)?)?/,
         weekday: /[周週星期][一二三四五六日天]/,
         weekend: /周末|週末|星期六|星期日|星期天/,
         numericDate: /(\d{1,2})[月\/\-](\d{1,2})(?:[日号號])?/,
-        // 增强中文相对日期表达识别能力
         otherRelative: /(\d+)[天日周週月年](?:后|後|之后|之後|以后|以後)|[过過](\d+)[天日周週月年]|(?:下|下个|下個|下一|今|本|这|這)(?:周|週|星期|月|礼拜|禮拜|年)|(?:上|上个|上個|上一|前|前个|前個)(?:周|週|星期|月|礼拜|禮拜|年)|(\d+)个?(?:月|周|星期|週|礼拜|禮拜|小时|小時)(?:后|後|之后|之後|以后|以後)/,
-        // 增加复合表达式的识别能力
         complexExpression: /下[个個]?月(\d{1,2})(?:号|號|日)|下下[个個]?(?:周|週|星期)|(\d+)个?月(?:后|後|以后|以後)(?:[周週星期][一二三四五六日天])?/,
         standard: /([上下]午|早上|晚上|傍晚|凌晨|中午)?[ ]?([\d一二三四五六七八九十]+)[点點时時](?:([\d一二三四五六七八九十半刻]+)[分]?)?|(\d{1,2})[:：](\d{1,2})/,
         am: /上午|早上|早晨|凌晨/,
         pm: /下午|晚上|傍晚|黄昏|晚间|中午/,
-        // 更全面的中文时段表示
         timeWords: {
           '早上': 8, '早晨': 8, '凌晨': 5, '上午': 10, 
           '中午': 12, '午饭': 12, '午餐': 12, '正午': 12,
@@ -280,10 +281,11 @@ const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
         tomorrow: /明日|あした/,
         dayAfterTomorrow: /明後日|あさって/,
         nextWeek: /来週の[月火水木金土日]/,
+        nextNextWeek: /再来週の[月火水木金土日]/,
+        nextMonth: /来月(?:の(\d{1,2})日)?/,
         weekday: /[月火水木金土日]曜日/,
         weekend: /週末/,
         numericDate: /(\d{1,2})月(\d{1,2})日/,
-        // 增强日文相对日期表达识别能力
         otherRelative: /(\d+)[日週月年]後|(\d+)[日週月年]前|来[週月年]|先[週月年]|次[週月年]|前[週月年]|(\d+)[日週月年](?:後|以後)/,
         standard: /(\d{1,2})(?:時|:)(\d{1,2})?(?:分)?/,
         am: /午前|朝|早朝/,
@@ -295,10 +297,11 @@ const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
         tomorrow: /내일/,
         dayAfterTomorrow: /모레/,
         nextWeek: /다음\s*[월화수목금토일]요일/,
+        nextNextWeek: /다다음\s*[월화수목금토일]요일/,
+        nextMonth: /다음달(?:\s*(\d{1,2})일)?/,
         weekday: /[월화수목금토일]요일/,
         weekend: /주말/,
         numericDate: /(\d{1,2})월\s*(\d{1,2})일/,
-        // 增强韩文相对日期表达识别能力
         otherRelative: /(\d+)[일주월년]\s*후|(\d+)[일주월년]\s*전|다음\s*[주월년]|이번\s*[주월년]|지난\s*[주월년]|다음달|이번달|지난달|(\d+)[일주월년]\s*(?:후|이후)/,
         standard: /(\d{1,2})(?:시|:)(\d{1,2})?(?:분)?/,
         am: /오전|아침/,
@@ -308,12 +311,21 @@ const getDateTimePatterns = (lang: 'en' | 'zh' | 'ja' | 'ko') => {
       return {
         today: /today/i,
         tomorrow: /tomorrow/i,
-        standard: /(\d{1,2})(?::(\d{1,2}))?/,
-        am: /am/i,
-        pm: /pm/i,
+        dayAfterTomorrow: /day after tomorrow/i,
+        nextWeek: /next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
+        nextNextWeek: /next\s+next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
+        nextMonth: /next\s+month/i,
+        weekday: /(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i,
+        weekend: /weekend/i,
+        numericDate: /(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12][0-9]|3[01])(?:[\/\-](\d{2,4}))?/,
+        monthDate: /(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[,\s]*(\d{1,2})(?:st|nd|rd|th)?(?:[,\s]+(\d{4}))?/i,
+        otherRelative: /(?:in|after)\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)s?\b|(\d+)\s+(day|days|week|weeks|month|months|year|years)s?\s+(?:from\s+)?(?:now|today)\b|(next|coming)\s+(day|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|(last|previous)\s+(day|week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+        standard: /(\d{1,2})(?::(\d{1,2}))?\s*(?:am|pm|a\.m\.|p\.m\.)??/i,
+        am: /(?:am|a\.m\.|morning)/i,
+        pm: /(?:pm|p\.m\.|afternoon|evening|night)/i,
       };
   }
-}; 
+};
 
 /**
  * 定义星期几的映射
@@ -990,6 +1002,53 @@ const parseQuickNote = (text: string): { date: Date, content: string } | null =>
           } else {
             // 如果没有特定匹配，使用通用验证函数，但标记为已处理
             resultDate = validateDateWithWeekday(processedText, resultDate, true, lang);
+            dateProcessed = true;
+          }
+        }
+        
+        // 处理下下周X
+        else if (patterns.nextNextWeek?.test(processedText) || /下下[个個]?[周週]/.test(processedText)) {
+          console.log('[Debug Next Next Week] 匹配到下下周模式，原文本:', processedText);
+          
+          // 针对"下下周五"这样的表达式进行特殊处理
+          const weekdayMatch = processedText.match(/下下[个個]?[周週]([一二三四五六日天])/);
+          console.log('[Debug Next Next Week] 匹配到的weekdayMatch:', weekdayMatch);
+          
+          if (weekdayMatch && weekdayMatch[1]) {
+            const weekdayChar = weekdayMatch[1];
+            console.log('[Debug Next Next Week] 提取到的星期字符:', weekdayChar);
+            const targetDay = zhWeekdayMap[weekdayChar];
+            console.log('[Debug Next Next Week] 映射后的目标星期:', targetDay);
+            
+            if (targetDay !== undefined) {
+              // 使用 parseNextNextWeekdayFromToday 计算日期
+              console.log('[Debug Next Next Week] 调用parseNextNextWeekdayFromToday前，当前日期:', resultDate.toISOString());
+              resultDate = parseNextNextWeekdayFromToday(targetDay);
+              console.log('[Debug Next Next Week] 最终计算得到的日期:', resultDate.toISOString());
+              dateProcessed = true;
+            }
+          }
+          
+          // 处理"下下周+几"的情况
+          const daysMatch = processedText.match(/下下[个個]?[周週](\d+|[一二三四五六七八九十两]+)(?:天|日)?/);
+          if (daysMatch && daysMatch[1]) {
+            const daysStr = daysMatch[1];
+            const daysToAdd = parseNumberString(daysStr, lang);
+            console.log('[Debug Next Next Week] 提取到的天数:', daysToAdd);
+            
+            // 计算到下下周的天数
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const todayWeekday = today.getDay() || 7;
+            const adjustedToday = todayWeekday === 0 ? 7 : todayWeekday;
+            
+            // 计算到下下周的天数
+            const totalDaysToAdd = 14 + daysToAdd; // 直接加14天到下下周，再加上指定的天数
+            console.log('[Debug Next Next Week] 计算总天数:', totalDaysToAdd, '(公式: 14 +', daysToAdd, ')');
+            
+            resultDate = new Date(today);
+            resultDate.setDate(today.getDate() + totalDaysToAdd);
+            console.log('[Debug Next Next Week] 最终计算得到的日期:', resultDate.toISOString());
             dateProcessed = true;
           }
         }
@@ -1808,3 +1867,85 @@ console.log("调用后, dateResult=", dateResult5.toISOString());
 console.log("调用前, targetWeekday=", 6);
 const dateResult6 = parseNextWeekdayFromToday(6);
 console.log("调用后, dateResult=", dateResult6.toISOString());
+
+function parseNextNextWeekdayFromToday(targetWeekday: number): Date {
+  const today = new Date();
+  // 重置时间为凌晨0点
+  today.setHours(0, 0, 0, 0);
+  // 得到今天的星期数，若为0（周日）则按7处理
+  const todayWeekday = today.getDay() || 7;
+  
+  console.log('[Debug Next Next Week] parseNextNextWeekdayFromToday 详细计算过程:');
+  console.log('- 当前日期:', today.toISOString());
+  console.log('- 当前星期:', todayWeekday);
+  console.log('- 目标星期:', targetWeekday);
+
+  // 使用新公式计算：daysToAdd = targetWeekday + 14 - todayWeekday
+  const daysToAdd = targetWeekday + 14 - todayWeekday;
+  
+  console.log('[Debug Next Next Week] 计算过程:');
+  console.log('- 使用公式: daysToAdd = targetWeekday + 14 - todayWeekday');
+  console.log('- 计算: daysToAdd =', targetWeekday, '+ 14 -', todayWeekday, '=', daysToAdd);
+
+  const targetDate = new Date(today);
+  targetDate.setDate(today.getDate() + daysToAdd);
+
+  console.log('[Debug Next Next Week] 最终结果:');
+  console.log('- 计算得到的天数:', daysToAdd);
+  console.log('- 目标日期:', targetDate.toISOString());
+  console.log('- 目标日期的星期:', targetDate.getDay() || 7);
+  
+  return targetDate;
+}
+
+function testNextNextWeekCalculation() {
+  console.log('\n=== 开始测试下下周计算逻辑 ===\n');
+  
+  // 设置测试日期为2025-04-11（周五）
+  const testDate = new Date('2025-04-11');
+  const originalDate = Date;
+  // @ts-ignore
+  global.Date = class extends Date {
+    constructor() {
+      super();
+      return testDate;
+    }
+  };
+
+  console.log('当前测试日期:', testDate.toISOString());
+  console.log('当前是周五(5)\n');
+
+  // 测试用例数组
+  const testCases = [
+    { target: 1, name: '下下周一', expectedDate: '2025-04-21' },
+    { target: 2, name: '下下周二', expectedDate: '2025-04-22' },
+    { target: 3, name: '下下周三', expectedDate: '2025-04-23' },
+    { target: 4, name: '下下周四', expectedDate: '2025-04-24' },
+    { target: 5, name: '下下周五', expectedDate: '2025-04-25' },
+    { target: 6, name: '下下周六', expectedDate: '2025-04-26' },
+    { target: 7, name: '下下周日', expectedDate: '2025-04-27' }
+  ];
+
+  // 运行所有测试用例
+  testCases.forEach(testCase => {
+    const resultDate = parseNextNextWeekdayFromToday(testCase.target);
+    const expected = new Date(testCase.expectedDate);
+    const isCorrect = resultDate.getTime() === expected.getTime();
+    
+    console.log(`\n[测试] ${testCase.name}:`);
+    console.log('- 目标星期:', testCase.target);
+    console.log('- 预期日期:', expected.toISOString());
+    console.log('- 实际日期:', resultDate.toISOString());
+    console.log('- 是否正确:', isCorrect);
+    if (!isCorrect) {
+      console.log('- 差异天数:', (resultDate.getTime() - expected.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  });
+
+  // 恢复原始Date对象
+  global.Date = originalDate;
+  console.log('\n=== 测试完成 ===\n');
+}
+
+// 在文件末尾调用测试函数
+testNextNextWeekCalculation();
