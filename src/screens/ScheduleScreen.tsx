@@ -180,8 +180,13 @@ export const ScheduleScreen = () => {
     return () => unsubscribe();
   }, []);
 
-  // 处理任务过滤
-  const filteredTasks = tasks.filter(task => {
+  // 先排序（近到远）
+  const sortedTasks = [...tasks].sort((a, b) => {
+    const aTime = a.dateTime && typeof a.dateTime.toDate === 'function' ? a.dateTime.toDate().getTime() : (a.dateTime instanceof Date ? a.dateTime.getTime() : 0);
+    const bTime = b.dateTime && typeof b.dateTime.toDate === 'function' ? b.dateTime.toDate().getTime() : (b.dateTime instanceof Date ? b.dateTime.getTime() : 0);
+    return aTime - bTime;
+  });
+  const filteredTasks = sortedTasks.filter(task => {
     const searchLower = searchText.toLowerCase();
     const matchesSearch = 
       task.content?.toLowerCase().includes(searchLower) || 
@@ -206,6 +211,33 @@ export const ScheduleScreen = () => {
         return matchesSearch;
     }
   });
+
+  // 按日期分组函数，放在组件内，useEffect/useState 之后
+  const groupTasksByDate = (tasks: Task[]) => {
+    const groups: { [date: string]: Task[] } = {};
+    tasks.forEach(task => {
+      let dateObj: Date;
+      if (task.dateTime && typeof task.dateTime.toDate === 'function') {
+        dateObj = task.dateTime.toDate();
+      } else if (task.dateTime instanceof Date) {
+        dateObj = task.dateTime;
+      } else {
+        dateObj = new Date(); // fallback
+      }
+      let dateStr = '';
+      if (language === 'en') {
+        dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      } else if (language === 'ko') {
+        dateStr = dateObj.toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      } else {
+        dateStr = dateObj.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      }
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(task);
+    });
+    return groups;
+  };
+  const groupedTasks = groupTasksByDate(filteredTasks);
 
   const handleSignOut = async () => {
     try {
@@ -630,6 +662,9 @@ export const ScheduleScreen = () => {
     fetchTasks();
   }, [currentUser]);
 
+  // 日期分组标题样式
+  const dateHeaderStyle = styles.dateHeader || { fontSize: 16, fontWeight: 'bold', color: '#1976D2', marginVertical: 8, marginLeft: 4 };
+
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#f8f9fa" barStyle="dark-content" />
@@ -761,52 +796,62 @@ export const ScheduleScreen = () => {
           {filteredTasks.length === 0 ? (
             <Text style={styles.noTasksText}>{t.noTasks}</Text>
           ) : (
-            filteredTasks.map((task) => (
-              <View
-                key={task.id}
-                style={[
-                  styles.taskItem,
-                  task.status === 'completed' && styles.taskItemCompleted,
-                ]}
-              >
-                <View style={styles.taskMainContent}>
-                  <TouchableOpacity
-                    style={styles.taskStatusButton}
-                    onPress={() => handleToggleComplete(task)}
-                  >
-                    <View style={[
-                      styles.taskStatusIndicator,
-                      task.status === 'completed' && styles.taskStatusIndicatorCompleted
-                    ]}>
-                      {task.status === 'completed' && <Text style={styles.checkmark}>✓</Text>}
+            Object.entries(groupedTasks).map(([dateStr, tasks]) => (
+              <View key={dateStr} style={{ marginBottom: 12 }}>
+                <Text style={dateHeaderStyle}>{dateStr}</Text>
+                {tasks.map((task) => {
+                  const start = task.dateTime?.toDate ? task.dateTime.toDate() : task.dateTime;
+                  const end = task.endTime?.toDate ? task.endTime.toDate() : task.endTime;
+                  const formatTime = (date) => date ? date.toLocaleTimeString(language === 'en' ? 'en-US' : language === 'ko' ? 'ko-KR' : 'zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+                  return (
+                    <View
+                      key={task.id}
+                      style={[
+                        styles.taskItem,
+                        task.status === 'completed' && styles.taskItemCompleted,
+                      ]}
+                    >
+                      <View style={styles.taskMainContent}>
+                        <TouchableOpacity
+                          style={styles.taskStatusButton}
+                          onPress={() => handleToggleComplete(task)}
+                        >
+                          <View style={[
+                            styles.taskStatusIndicator,
+                            task.status === 'completed' && styles.taskStatusIndicatorCompleted
+                          ]}>
+                            {task.status === 'completed' && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                        </TouchableOpacity>
+                        <Text
+                          style={[
+                            styles.taskContent,
+                            task.status === 'completed' && styles.taskContentCompleted,
+                          ]}
+                        >
+                          {extractTaskDisplayContent(task.content)}
+                        </Text>
+                        <Text style={styles.taskDateTime}>
+                          {formatTime(start)} - {formatTime(end)}
+                        </Text>
+                      </View>
+                      <View style={styles.taskActions}>
+                        <TouchableOpacity
+                          style={[styles.taskActionButton, styles.editButton]}
+                          onPress={() => openEditModal(task)}
+                        >
+                          <Text style={styles.taskActionButtonText}>{t.edit}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.taskActionButton, styles.deleteButton]}
+                          onPress={() => handleDeleteTask(task.id)}
+                        >
+                          <Text style={[styles.taskActionButtonText, styles.deleteButtonText]}>{t.delete}</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  </TouchableOpacity>
-                  <Text
-                    style={[
-                      styles.taskContent,
-                      task.status === 'completed' && styles.taskContentCompleted,
-                    ]}
-                  >
-                    {extractTaskDisplayContent(task.content)}
-                  </Text>
-                  <Text style={styles.taskDateTime}>
-                    {formatTaskTime(task)}
-                  </Text>
-                </View>
-                <View style={styles.taskActions}>
-                  <TouchableOpacity
-                    style={[styles.taskActionButton, styles.editButton]}
-                    onPress={() => openEditModal(task)}
-                  >
-                    <Text style={styles.taskActionButtonText}>{t.edit}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.taskActionButton, styles.deleteButton]}
-                    onPress={() => handleDeleteTask(task.id)}
-                  >
-                    <Text style={[styles.taskActionButtonText, styles.deleteButtonText]}>{t.delete}</Text>
-                  </TouchableOpacity>
-                </View>
+                  );
+                })}
               </View>
             ))
           )}
@@ -1642,5 +1687,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
+  },
+  dateHeader: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1976D2',
+    marginVertical: 8,
+    marginLeft: 4,
   },
 }); 

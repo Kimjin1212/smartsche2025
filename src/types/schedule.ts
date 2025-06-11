@@ -25,6 +25,8 @@ export interface TaskItem {
   tags?: string[];
   notes?: string;
   color?: string; // Added color field
+  taskType?: 'work' | 'study' | 'exercise' | 'meeting' | 'other';
+  priority?: 1 | 2 | 3 | 4 | 5;
 }
 
 export interface TimeSlot {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { SmartTimeSlot } from '../types/schedule';
 
 interface SmartTimeRecommendationModalProps {
@@ -31,18 +31,20 @@ export const SmartTimeRecommendationModal: React.FC<SmartTimeRecommendationModal
         <View style={styles.modalContent}>
           <Text style={styles.title}>智能时间推荐</Text>
           
-          {recommendations.map((slot, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.recommendationItem}
-              onPress={() => onSelect(slot)}
-            >
-              <Text style={styles.timeText}>
-                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
-              </Text>
-              <Text style={styles.explanationText}>{slot.explanation}</Text>
-            </TouchableOpacity>
-          ))}
+          <ScrollView style={{ maxHeight: 350 }}>
+            {recommendations.map((slot, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.recommendationItem}
+                onPress={() => onSelect(slot)}
+              >
+                <Text style={styles.timeText}>
+                  {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                </Text>
+                <Text style={styles.explanationText}>{slot.explanation}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>关闭</Text>

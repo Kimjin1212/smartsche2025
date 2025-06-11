@@ -56,6 +56,8 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
   const [weekdayText, setWeekdayText] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderOffsetMinutes, setReminderOffsetMinutes] = useState('10');
+  const [step, setStep] = useState<'form' | 'duration' | 'recommend'>('form');
+  const [taskDuration, setTaskDuration] = useState(60);
   
   const smartScheduler = new SmartScheduler();
 
@@ -79,6 +81,12 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
       setWeekdayText(weekdayText);
     }
   }, [selectedDate, language]);
+
+  useEffect(() => {
+    if (visible) {
+      setStep('form');
+    }
+  }, [visible]);
 
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false);
@@ -156,18 +164,21 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
       const [endHour, endMinute] = endTime.split(':').map(Number);
       endDate.setHours(endHour, endMinute, 0);
 
-      const newTask = {
+      const newTask: any = {
         title,
         content: title,
-        location,
+        location: location || '',
         dateTime: firestore.Timestamp.fromDate(taskDate),
         endTime: firestore.Timestamp.fromDate(endDate),
-        color: selectedColor,
+        color: selectedColor || '',
         weekday: taskDate.getDay() === 0 ? 6 : taskDate.getDay() - 1,
         createdAt: firestore.FieldValue.serverTimestamp(),
-        reminderEnabled,
-        reminderOffsetMinutes: reminderEnabled ? parseInt(reminderOffsetMinutes) : undefined,
+        reminderEnabled: !!reminderEnabled,
       };
+      if (reminderEnabled && reminderOffsetMinutes) {
+        newTask.reminderOffsetMinutes = parseInt(reminderOffsetMinutes);
+      }
+      Object.keys(newTask).forEach(k => newTask[k] === undefined && delete newTask[k]);
 
       await onAddTask(newTask);
       resetForm();
@@ -203,126 +214,199 @@ export const AddTaskModal: React.FC<AddTaskModalProps> = ({
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <ScrollView>
-            <Text style={styles.modalTitle}>{t.addTask}</Text>
+          {step === 'form' && (
+            <ScrollView>
+              <Text style={styles.modalTitle}>{t.addTask}</Text>
 
-            <Text style={styles.inputLabel}>{t.taskTitle}</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder={t.taskTitle}
-            />
+              <Text style={styles.inputLabel}>{t.taskTitle}</Text>
+              <TextInput
+                style={styles.input}
+                value={title}
+                onChangeText={setTitle}
+                placeholder={t.taskTitle}
+              />
 
-            <Text style={styles.inputLabel}>{t.taskLocation}</Text>
-            <TextInput
-              style={styles.input}
-              value={location}
-              onChangeText={setLocation}
-              placeholder={t.taskLocation}
-            />
+              <Text style={styles.inputLabel}>{t.taskLocation}</Text>
+              <TextInput
+                style={styles.input}
+                value={location}
+                onChangeText={setLocation}
+                placeholder={t.taskLocation}
+              />
 
-            <Text style={styles.inputLabel}>{t.date}</Text>
-            <TouchableOpacity
-              style={styles.dateInput}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text>
-                {format(selectedDate, language === 'en' ? 'MM/dd/yyyy' : 'yyyy-MM-dd')}
-              </Text>
-            </TouchableOpacity>
+              <Text style={styles.inputLabel}>{t.date}</Text>
+              <TouchableOpacity
+                style={styles.dateInput}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text>
+                  {format(selectedDate, language === 'en' ? 'MM/dd/yyyy' : 'yyyy-MM-dd')}
+                </Text>
+              </TouchableOpacity>
 
-            <Text style={styles.inputLabel}>{t.weekday}</Text>
-            <View style={styles.weekdayDisplay}>
-              <Text style={styles.weekdayText}>{weekdayText}</Text>
-            </View>
-
-            <View style={styles.timeContainer}>
-              <View style={styles.timeField}>
-                <Text style={styles.inputLabel}>{t.startTime}</Text>
-                <TouchableOpacity
-                  style={styles.timeInput}
-                  onPress={() => setShowStartTimePicker(true)}
-                >
-                  <Text>{startTime}</Text>
-                </TouchableOpacity>
+              <Text style={styles.inputLabel}>{t.weekday}</Text>
+              <View style={styles.weekdayDisplay}>
+                <Text style={styles.weekdayText}>{weekdayText}</Text>
               </View>
 
-              <View style={styles.timeField}>
-                <Text style={styles.inputLabel}>{t.endTime}</Text>
-                <TouchableOpacity
-                  style={styles.timeInput}
-                  onPress={() => setShowEndTimePicker(true)}
-                >
-                  <Text>{endTime}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.smartRecommendButton}
-              onPress={handleSmartRecommendation}
-            >
-              <Text style={styles.smartRecommendText}>{t.smartRecommend}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.inputLabel}>{t.color}</Text>
-            <View style={styles.colorContainer}>
-              {colors.map((color) => (
-                <TouchableOpacity
-                  key={color}
-                  style={[
-                    styles.colorButton,
-                    { backgroundColor: color },
-                    selectedColor === color && styles.colorButtonSelected,
-                  ]}
-                  onPress={() => setSelectedColor(color)}
-                />
-              ))}
-            </View>
-
-            <View style={styles.reminderContainer}>
-              <Text style={styles.inputLabel}>{t.reminder}</Text>
-              <View style={styles.reminderRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.reminderToggle,
-                    reminderEnabled && styles.reminderToggleActive,
-                  ]}
-                  onPress={() => setReminderEnabled(!reminderEnabled)}
-                >
-                  <Text
-                    style={[
-                      styles.reminderToggleText,
-                      reminderEnabled && styles.reminderToggleTextActive,
-                    ]}
+              <View style={styles.timeContainer}>
+                <View style={styles.timeField}>
+                  <Text style={styles.inputLabel}>{t.startTime}</Text>
+                  <TouchableOpacity
+                    style={styles.timeInput}
+                    onPress={() => setShowStartTimePicker(true)}
                   >
-                    ✓
-                  </Text>
+                    <Text>{startTime}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.timeField}>
+                  <Text style={styles.inputLabel}>{t.endTime}</Text>
+                  <TouchableOpacity
+                    style={styles.timeInput}
+                    onPress={() => setShowEndTimePicker(true)}
+                  >
+                    <Text>{endTime}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.smartRecommendButton}
+                onPress={() => setStep('duration')}
+              >
+                <Text style={styles.smartRecommendText}>{t.smartRecommend}</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.inputLabel}>{t.color}</Text>
+              <View style={styles.colorContainer}>
+                {colors.map((color) => (
+                  <TouchableOpacity
+                    key={color}
+                    style={[
+                      styles.colorButton,
+                      { backgroundColor: color },
+                      selectedColor === color && styles.colorButtonSelected,
+                    ]}
+                    onPress={() => setSelectedColor(color)}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.reminderContainer}>
+                <Text style={styles.inputLabel}>{t.reminder}</Text>
+                <View style={styles.reminderRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.reminderToggle,
+                      reminderEnabled && styles.reminderToggleActive,
+                    ]}
+                    onPress={() => setReminderEnabled(!reminderEnabled)}
+                  >
+                    <Text
+                      style={[
+                        styles.reminderToggleText,
+                        reminderEnabled && styles.reminderToggleTextActive,
+                      ]}
+                    >
+                      ✓
+                    </Text>
+                  </TouchableOpacity>
+                  {reminderEnabled && (
+                    <View style={styles.reminderOffsetContainer}>
+                      <TextInput
+                        style={styles.reminderOffsetInput}
+                        value={reminderOffsetMinutes}
+                        onChangeText={setReminderOffsetMinutes}
+                        keyboardType="number-pad"
+                      />
+                      <Text style={styles.reminderOffsetLabel}>{t.minutes}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
+                  <Text style={styles.cancelButtonText}>{t.cancel}</Text>
                 </TouchableOpacity>
-                {reminderEnabled && (
-                  <View style={styles.reminderOffsetContainer}>
-                    <TextInput
-                      style={styles.reminderOffsetInput}
-                      value={reminderOffsetMinutes}
-                      onChangeText={setReminderOffsetMinutes}
-                      keyboardType="number-pad"
-                    />
-                    <Text style={styles.reminderOffsetLabel}>{t.minutes}</Text>
-                  </View>
-                )}
+                <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+                  <Text style={styles.saveButtonText}>{t.save}</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+          {step === 'duration' && (
+            <View style={{ backgroundColor: '#f5f5f5', borderRadius: 12, padding: 24, alignItems: 'center', justifyContent: 'center', minWidth: 260, minHeight: 180, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 }}>
+              <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 18, color: '#222' }}>{t.enterDuration}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+                <TextInput
+                  style={{ borderWidth: 1, borderColor: '#bbb', borderRadius: 6, padding: 10, width: 100, fontSize: 20, textAlign: 'center', backgroundColor: '#fff', color: '#222' }}
+                  value={taskDuration.toString()}
+                  onChangeText={text => setTaskDuration(Number(text.replace(/[^0-9]/g, '')))}
+                  placeholder="请输入分钟数"
+                  placeholderTextColor="#aaa"
+                  keyboardType="numeric"
+                  maxLength={4}
+                />
+                <Text style={{ marginLeft: 10, fontSize: 18, color: '#333' }}>{t.minutesUnit}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', width: '100%' }}>
+                <TouchableOpacity onPress={() => setStep('form')} style={{ marginRight: 32 }}>
+                  <Text style={{ color: '#888', fontSize: 16 }}>{t.cancel}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => {
+                  const duration = Number(taskDuration);
+                  if (isNaN(duration) || duration <= 0) {
+                    Alert.alert('提示', '请输入有效的任务时长');
+                    return;
+                  }
+                  const dateTasksFilter = existingTasks.filter(task => {
+                    const taskDate = task.dateTime.toDate();
+                    return taskDate.toDateString() === selectedDate.toDateString();
+                  });
+                  const timeSlots = dateTasksFilter.map(task => ({
+                    startTime: task.dateTime.toDate().toISOString(),
+                    endTime: task.endTime.toDate().toISOString(),
+                  }));
+                  const recommendedSlots = smartScheduler.getSmartTimeSlots(duration, timeSlots, selectedDate, language);
+                  console.log('to recommend', recommendedSlots);
+                  setRecommendations(recommendedSlots);
+                  setStep('recommend');
+                }}>
+                  <Text style={{ color: '#1976D2', fontSize: 16, fontWeight: 'bold' }}>{t.confirm}</Text>
+                </TouchableOpacity>
               </View>
             </View>
-
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.cancelButton} onPress={handleClose}>
-                <Text style={styles.cancelButtonText}>{t.cancel}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-                <Text style={styles.saveButtonText}>{t.save}</Text>
+          )}
+          {step === 'recommend' && (
+            <View style={{ backgroundColor: '#f5f5f5', borderRadius: 12, padding: 24, alignItems: 'center', justifyContent: 'center', minWidth: 260, minHeight: 180, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 }}>
+              <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#222' }}>{t.smartRecommendTitle}</Text>
+              <ScrollView style={{ maxHeight: 220, width: '100%', backgroundColor: 'transparent' }} contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }}>
+                {recommendations.length === 0 ? (
+                  <Text style={{ color: '#888', fontSize: 16, textAlign: 'center', marginTop: 40 }}>{t.noRecommendation}</Text>
+                ) : recommendations.map((slot, index) => (
+                  <TouchableOpacity
+                    key={slot.startTime + slot.endTime + '-' + index}
+                    style={[styles.smartRecommendButton, { width: '90%', marginBottom: 10 }]}
+                    onPress={() => {
+                      const start = new Date(slot.startTime);
+                      const end = new Date(slot.endTime);
+                      setStartTime(format(start, 'HH:mm'));
+                      setEndTime(format(end, 'HH:mm'));
+                      setStep('form');
+                    }}
+                  >
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#1976D2' }}>{format(new Date(slot.startTime), 'HH:mm')} - {format(new Date(slot.endTime), 'HH:mm')}</Text>
+                    <Text style={{ fontSize: 14, color: '#333', marginTop: 2 }}>{slot.explanation || '推荐时间段'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={[styles.cancelButton, { marginTop: 10 }]} onPress={() => setStep('form')}>
+                <Text style={styles.cancelButtonText}>{t.back}</Text>
               </TouchableOpacity>
             </View>
-          </ScrollView>
+          )}
 
           {showDatePicker && (
             <DateTimePicker
